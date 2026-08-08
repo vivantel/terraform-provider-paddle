@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [master, feature/v1]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+          cache: true
+      - run: go mod tidy
+      - run: go build ./...
+      - run: go vet ./...
+      - run: gofmt -l . | (! grep .)
+      - run: go test ./...
+
+  acceptance:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+        # terraform-plugin-testing (via hc-install) auto-downloads a
+        # Terraform CLI binary if it can't find one on PATH, and that
+        # download's own GPG signature check failed with "openpgp: key
+        # expired" the first time this ran (see git history) — unrelated
+        # to this provider's code, an expired key baked into the hc-install
+        # version pulled in at the time. Installing Terraform explicitly
+        # here means the library finds it on PATH first and never hits
+        # that code path, regardless of whether a given hc-install/
+        # terraform-plugin-testing version has the issue.
+      - run: go test ./... -run TestAcc -v
+        env:
+          TF_ACC: "1"
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+        # docs/decisions/0003-acceptance-tests-against-live-sandbox.md:
+        # every TestAcc* test's testAccPreCheck skips (not fails) when
+        # PADDLE_API_KEY is unset. GitHub doesn't inject repo secrets into
+        # `pull_request`-triggered runs for forked PRs, so this job just
+        # reports everything skipped on those runs rather than failing or
+        # leaking the sandbox key — no extra fork guard needed here.
+
+  docs:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+        # tfplugindocs shells out to Terraform to export the provider
+        # schema — same hc-install expired-key issue as the acceptance
+        # job (see its comment above) if it has to download its own copy.
+      - run: go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@latest
+        # @latest is fine as of the go 1.25 bump — the go-version ceiling
+        # that forced pinning this (and terraform-plugin-testing/
+        # terraform-plugin-framework-validators) to older releases while
+        # this repo was on go 1.22 no longer applies.
+      - run: tfplugindocs generate
+      - run: git diff --exit-code -- docs/
+        # docs/guardrails/docs-must-be-regenerated-before-merge.md: fail if
+        # generation produced any diff against what's committed, so the
+        # Registry-facing docs/ (index.md, resources/*.md,
+        # data-sources/*.md — distinct from this repo's own
+        # docs/{facts,decisions,guardrails,skills,plans}/ knowledge
+        # artifacts, which this job never touches) can't silently drift
+        # from the actual schema.
