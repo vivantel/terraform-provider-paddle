@@ -80,8 +80,13 @@ v1 commit did.
 
 ## Step 0: `custom_data` retrofit
 
-Status: done, pending real-sandbox confirmation (next CI push) —
-2026-08-08. Modeled as a JSON-encoded `types.String` (confirmed against
+Status: done, confirmed green against the real sandbox — 2026-08-08
+(PR #2, run 31283730453; all 9 acceptance tests pass, including the
+`PlanOnly` no-op step inside each `*_customData` test — the
+semantic-JSON plan modifier worked against real Paddle-round-tripped data
+on the first try, no bugs found here unlike almost every other resource
+change this project has made). Modeled as a JSON-encoded `types.String`
+(confirmed against
 the API reference that `custom_data` is arbitrary nested JSON, not a flat
 string map — `types.Map` wouldn't fit) with a shared
 `customDataPlanModifier` doing semantic-equality comparison, in new
