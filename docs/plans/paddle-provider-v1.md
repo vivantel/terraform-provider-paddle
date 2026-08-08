@@ -188,7 +188,33 @@ File: `internal/client/client.go`
 
 ## Step 2: `paddle_discount` resource + data source
 
-Status: done (pending sandbox confirmation) — 2026-08-08.
+Status: done, confirmed green against the real sandbox — 2026-08-08 (CI run
+31278336381; `TestAccPaddleDiscount_basic` passed alongside both existing
+`TestAccPaddle{Product,Price}_basic`). Took 2 more real-sandbox bugs beyond
+what local testing/code review caught, on top of the 3 already applied
+from Step 5's Price lessons — see commits `6b1014f`/`90ae023`:
+1. `code` was modeled Optional-only; Paddle actually auto-generates one
+   server-side when omitted (e.g. `"3268E6WW3W"`), so the plan (stays
+   null) never matched the apply result — "Provider produced inconsistent
+   result after apply". Needed `Optional+Computed` +
+   `UseStateForUnknown`, same as `paddle_product`'s `type`/`paddle_price`'s
+   `tax_mode`. No `Default` possible here (value is genuinely random),
+   unlike `enabled_for_checkout`/`mode`/`recur` which do have real
+   Paddle-documented static defaults.
+2. Once `code` became `Computed`, `toAPIDiscount`'s `!m.Code.IsNull()`
+   check let an `Unknown` value through (`IsNull()` is false for `Unknown`
+   too, not just `Known`) — `ValueString()` on `Unknown` silently returns
+   `""`, so it sent `code: ""` instead of omitting the field; Paddle
+   rejected the empty string outright. Needed the same
+   `!IsNull() && !IsUnknown()` pair already correctly used for
+   `EnabledForCheckout`/`Mode`/`Recur`/`RestrictTo` in the same function.
+
+Takeaway for any future resource: "Optional+Computed with `Default`" and
+"Optional+Computed without `Default` because the value is server-generated"
+are two genuinely different cases needing different handling in both the
+schema *and* every `toAPI*` unknown-check — getting the schema right isn't
+enough by itself.
+
 `internal/provider/discount_resource.go` + `discount_data_source.go`
 written, registered in `provider.go`, full local build/vet/gofmt/unit
 tests clean. Applied all three lessons from Step 5's Price bugs up front
@@ -207,11 +233,10 @@ dependency, pinned at v0.16.0 for the same `go 1.22` ceiling as
 `paddle_product`/`paddle_price` predate this and don't have equivalent
 validators on their enum-like fields (`tax_category`, `type`, `tax_mode`),
 worth a retrofit pass later for consistency.
-`TestAccPaddleDiscount_basic` written (create with all three defaulted
-fields left unset — deliberately the exact path that crashed Price — plus
-update, no-op-plan check, and import) but **not yet run against the real
-sandbox**; confirm it passes in CI before considering this step fully done,
-the same way Price needed 3 rounds of real fixes despite passing locally.
+`TestAccPaddleDiscount_basic` (create with all three defaulted fields left
+unset — deliberately the exact path that crashed Price — plus update,
+no-op-plan check, and import) now passes against the real sandbox; see the
+2 additional fixes above this block that got it there.
 
 Implements: [[0001-catalog-only-scope-v1]],
 `docs/guardrails/catalog-resources-need-data-source.md`,
