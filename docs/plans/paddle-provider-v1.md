@@ -70,9 +70,11 @@ These need a human with access to GitHub org settings, a terminal for GPG,
 and the Terraform Registry UI. List them explicitly so a fresh session
 doesn't waste time trying to script around them.
 
-- [ ] Generate a GPG key dedicated to signing this provider's releases
-      (`gpg --full-generate-key`, RSA 4096 recommended). Export the private
-      key (`gpg --export-secret-keys --armor <key-id>`) and store it as the
+- [ ] Generate a GPG key dedicated to signing this provider's releases —
+      `gpg --full-generate-key`, choose **RSA and RSA**, 4096 bits (the
+      Terraform Registry only accepts RSA or DSA keys; don't accept a
+      default that produces an ECC/Ed25519 key). Export the private key
+      (`gpg --export-secret-keys --armor <key-id>`) and store it as the
       GitHub Actions secret `GPG_PRIVATE_KEY` on the
       `vivantel/terraform-provider-paddle` repo; store its passphrase (if
       any) as `PASSPHRASE`.
@@ -81,15 +83,22 @@ doesn't waste time trying to script around them.
     before trusting a provider).
   - See [[0004-versioning-v0.1.0-and-changelog]] for how this GPG key
     relates to the `v0.1.0` first release.
+  - Upload the **public** key at `https://registry.terraform.io` (not the
+    HCP Terraform portal / `app.terraform.io` — that's a separate paid
+    product with its own private-registry GPG key flow) → sign in with the
+    `vivantel` GitHub account → **User Settings → Signing Keys**
+    (`https://registry.terraform.io/settings/gpg-keys`) → **+ New GPG Key**
+    → paste `gpg --armor --export <key-id>` output.
 - [ ] Store the existing sandbox API key as the GitHub Actions secret
       `PADDLE_API_KEY` on the same repo (see
       [[0002-paddle-sandbox-account-available]] — the key itself already
       exists, this is just wiring it into CI).
 - [ ] Register `vivantel/terraform-provider-paddle` with the Terraform
       Registry's "Publish a provider" flow (registry.terraform.io → Publish
-      → Provider → connect the GitHub App), and upload the GPG public key
-      generated above to the Registry publisher account. This is what makes
-      the Registry actually ingest releases once GoReleaser starts producing
+      → Provider → connect the GitHub App). Do this after the GPG public key
+      above is already uploaded to the same account/namespace — the publish
+      flow expects a matching signing key to exist. This is what makes the
+      Registry actually ingest releases once GoReleaser starts producing
       them — without it, GitHub Releases will exist but never show up on the
       Registry.
 
