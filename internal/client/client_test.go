@@ -122,11 +122,10 @@ func TestDiscountJSON_NilOptionalFieldsMarshalAsExplicitNull(t *testing.T) {
 }
 
 func TestDiscountJSON_ReadOnlyFieldsNeverSentInRequestBody(t *testing.T) {
-	// A Discount built from a resource model (as toAPIDiscount will do,
-	// once the paddle_discount resource exists — see
-	// docs/plans/paddle-provider-v1.md Step 2) never sets TimesUsed/
-	// CreatedAt/UpdatedAt; they're populated only by unmarshaling a
-	// response. Confirms they stay omitted (not sent as 0/"") in that case.
+	// A Discount built from a resource model (as toAPIDiscount in
+	// discount_resource.go does) never sets TimesUsed/CreatedAt/UpdatedAt;
+	// they're populated only by unmarshaling a response. Confirms they stay
+	// omitted (not sent as 0/"") in that case.
 	d := Discount{Description: "10% off", Type: "percentage", Amount: "10"}
 
 	b, err := json.Marshal(d)

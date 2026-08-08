@@ -145,8 +145,7 @@ func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, re
 	// — but fetching only what this method needs (id) before
 	// fromAPIProduct overwrites state wholesale below keeps this resource
 	// correct by construction, not by accident of which field types it
-	// happens to have today (/code-review high finding: this was the one
-	// resource still doing a full decode).
+	// happens to have today.
 	var state ProductResourceModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
 	if resp.Diagnostics.HasError() {

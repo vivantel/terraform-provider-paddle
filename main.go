@@ -1,6 +1,6 @@
-// Terraform provider for Paddle Billing (products, prices). Not affiliated
-// with or endorsed by Paddle — calls Paddle's public REST API directly, no
-// third-party service in the request path.
+// Terraform provider for Paddle Billing (products, prices, discounts). Not
+// affiliated with or endorsed by Paddle — calls Paddle's public REST API
+// directly, no third-party service in the request path.
 package main
 
 import (

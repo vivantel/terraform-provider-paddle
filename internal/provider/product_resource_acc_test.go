@@ -30,10 +30,9 @@ func TestAccPaddleProduct_basic(t *testing.T) {
 			},
 			{
 				// Update: name and description change in place, no
-				// replacement — also exercises the description-clearing
-				// fix (docs/decisions client.go Product.Description
-				// omitempty removal) by setting a new value here and
-				// clearing it in the next step.
+				// replacement — also exercises the description-clearing fix
+				// (client.go's Product.Description omitempty removal) by
+				// setting a new value here and clearing it in the next step.
 				Config: providerConfig + testAccProductConfig("Acc Test Widget Renamed", "standard", `"a renamed acc test product"`),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "name", "Acc Test Widget Renamed"),

@@ -1,6 +1,7 @@
 // Package client is a minimal HTTP client for the Paddle Billing API
 // (https://developer.paddle.com/api-reference/overview). It only implements
-// the Products and Prices endpoints this provider currently needs.
+// the Products, Prices, and Discounts endpoints this provider currently
+// needs.
 package client
 
 import (
@@ -90,12 +91,12 @@ func IsNotFound(err error) bool {
 }
 
 // do sends a request, retrying on 429 (rate limited) and 5xx (transient
-// upstream failure) with bounded exponential backoff. A Retry-After header
-// on a 429 takes precedence over the computed backoff when present. Any
-// other non-2xx status, or the final attempt's failure, returns *APIError
-// unchanged — callers that already type-assert for *APIError (see
-// product_resource.go/price_resource.go's 404-on-Read handling) don't need
-// to change.
+// upstream failure) with bounded exponential backoff, within an overall
+// budget across the whole call (see retryOverallBudget). A Retry-After
+// header on a 429 takes precedence over the computed backoff when present.
+// Any other non-2xx status, or the final attempt's failure, returns
+// *APIError unchanged — callers that check for a 404 via IsNotFound (see
+// every resource's Read()/Delete()) don't need to change.
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, retryOverallBudget)
 	defer cancel()

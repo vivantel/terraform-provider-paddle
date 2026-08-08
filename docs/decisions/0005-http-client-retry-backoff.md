@@ -47,6 +47,25 @@ the apply, not retry it, so this would leave users to manually re-run
   `docs/guardrails/client-calls-must-use-retry-wrapper.md`. Resources must
   never bypass `client.Client` for raw HTTP calls.
 
+## Addendum: overall call budget (2026-08-08, `/code-review high`)
+
+The original implementation bounded each individual HTTP request (30s
+client timeout) but not the retry loop as a whole — a persistently *slow*
+(not fast-failing) backend could still block a single `do()` call for
+minutes, up to `retryMaxAttempts * defaultTimeout` plus backoff, all
+sequential. Fixed by wrapping the whole `do()` call in
+`context.WithTimeout(ctx, retryOverallBudget)` (60s) — `context.WithTimeout`
+always takes the earlier of two deadlines, so this only ever tightens an
+already-bounded caller context, never loosens an unbounded one beyond this
+budget. See `internal/client/client.go`'s `retryOverallBudget` and
+`TestDo_OverallBudgetBoundsSlowPersistentFailures`.
+
+Also added in the same pass: `client.IsNotFound(err)`, a shared helper for
+the 404-detection every resource's `Read()` and `Delete()` now use, backing
+the same tolerance this decision's retry logic doesn't itself cover (a 404
+isn't retried — it's not in the retryable-status set — but callers need a
+consistent way to recognize it).
+
 ## Related
 
 - [[0001-existing-provider-baseline]]

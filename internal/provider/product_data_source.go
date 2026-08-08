@@ -54,8 +54,9 @@ func (d *ProductDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	// fine at Read-time — so a full Config.Get isn't actually broken here
 	// the way it was for price_data_source.go — but fetching only what
 	// this method actually needs (id) before fromAPIProduct overwrites
-	// config wholesale below keeps this resource correct by construction,
-	// not by accident of which field types it happens to have today.
+	// config wholesale below keeps this data source correct by
+	// construction, not by accident of which field types it happens to
+	// have today.
 	var config ProductResourceModel
 	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("id"), &config.ID)...)
 	if resp.Diagnostics.HasError() {

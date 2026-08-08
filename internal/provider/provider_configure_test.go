@@ -11,10 +11,10 @@ import (
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
 )
 
-// providerConfigObjType/newProviderConfig build a real tfsdk.Config against
-// the provider's own schema, the same shape Terraform core would send —
-// used to exercise Configure() directly without the full acceptance-test
-// machinery, since these are pure request/response unit tests.
+// newProviderConfig builds a real tfsdk.Config against the provider's own
+// schema, the same shape Terraform core would send — used to exercise
+// Configure() directly without the full acceptance-test machinery, since
+// these are pure request/response unit tests.
 func newProviderConfig(t *testing.T, apiKey, environment tftypes.Value) provider.ConfigureRequest {
 	t.Helper()
 	p := &PaddleProvider{}

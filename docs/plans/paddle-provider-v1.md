@@ -309,9 +309,6 @@ even though neither is actually broken today (no nested struct field in
 either) — being correct by construction beats being correct by accident of
 current field types, and this is now the 3rd time this exact bug has
 appeared.
-Local build/vet/gofmt/unit tests all clean; all three new acceptance tests
-skip cleanly with no `PADDLE_API_KEY` set, not yet run against the real
-sandbox.
 
 Implements: `docs/guardrails/catalog-resources-need-data-source.md`,
 `docs/guardrails/resources-need-import-support.md`.
@@ -363,18 +360,17 @@ File: `internal/provider/provider.go`
 
 ## Step 5: Acceptance test suite
 
-Status: done for `paddle_product`/`paddle_price` — confirmed green against
-the real sandbox 2026-08-08 (CI run 31273040459), after fixing 3 real bugs
-the acceptance job caught (quantity Default, price update sending
-product_id, price Read() full-decode breaking import — see commits
-71e7f76/3fdc64c/4b49a92). Not yet covering `paddle_discount` since that
-resource doesn't exist yet (Step 2) — when it's built, apply these same
-three patterns from the start rather than rediscovering them: give any
-Optional+Computed nested attribute a real Default (not just
-UseStateForUnknown), never reuse a Create body type for an Update PATCH
-without checking what fields the API actually accepts there, and fetch
-only `id` in Read() rather than fully decoding state if the model has any
-Required nested (non-types.Object, non-pointer) attribute.
+Status: done for all three resources — `paddle_product`/`paddle_price`
+confirmed green against the real sandbox 2026-08-08 (CI run 31273040459),
+after fixing 3 real bugs the acceptance job caught (quantity Default, price
+update sending product_id, price Read() full-decode breaking import — see
+commits 71e7f76/3fdc64c/4b49a92). `paddle_discount` coverage came later
+with Step 2 (`discount_resource_acc_test.go`), applying those same three
+patterns from the start rather than rediscovering them — though Step 2's
+own status block records 2 further real sandbox bugs found anyway (`code`
+needing Optional+Computed, and an IsUnknown() check gap in toAPIDiscount),
+so "apply the known patterns up front" reduced but didn't eliminate new
+real-sandbox findings per resource.
 
 Implements: [[0003-acceptance-tests-against-live-sandbox]],
 `docs/guardrails/acceptance-tests-require-tf-acc-gate.md`.
@@ -383,26 +379,26 @@ Implements: [[0003-acceptance-tests-against-live-sandbox]],
    `testAccPreCheck`/`testAccProtoV6ProviderFactories`/`newTestAccClient`
    shared helpers.
 2. ~~For each of `paddle_product`, `paddle_price`, `paddle_discount`~~ Done
-   for the two existing resources
-   (`product_resource_acc_test.go`/`price_resource_acc_test.go`): create,
-   update, a no-op-plan check specifically for the `quantity`
-   `UseStateForUnknown` regression, an explicit description-clearing step
-   for the omitempty regression, `ImportState`/`ImportStateVerify`, and
-   `CheckDestroy` asserting `status == "archived"` (not 404 — Paddle
-   archives, doesn't hard-delete). **Still needed:** the same suite for
-   `paddle_discount` once Step 2 exists.
+   for all three resources
+   (`product_resource_acc_test.go`/`price_resource_acc_test.go`/
+   `discount_resource_acc_test.go`): create, update, a no-op-plan check for
+   the Default/UseStateForUnknown regression class, an explicit
+   clear-optional-field step for the omitempty regression, `ImportState`/
+   `ImportStateVerify`, and `CheckDestroy` asserting `status == "archived"`
+   (not 404 — Paddle archives, doesn't hard-delete). Data source lookups
+   also covered (Step 3): `TestAccPaddle{Product,Price,Discount}DataSource_basic`.
 3. ~~Confirm locally~~ Confirmed locally 2026-08-08 with no
    `PADDLE_API_KEY` set: `go test ./... -v` — unit tests pass for real,
-   both `TestAcc*` skip cleanly (`--- SKIP`). Full run against the actual
-   sandbox happens in CI (Step 6's `acceptance` job) — not yet confirmed
-   green there; watch the first `acceptance` job run on
-   `vivantel/terraform-provider-paddle`.
+   `TestAcc*` tests skip cleanly (`--- SKIP`). Full runs against the actual
+   sandbox confirmed green in CI's `acceptance` job repeatedly since —
+   see each step's own status block for the specific CI run IDs.
 
-Dependency note: added `github.com/hashicorp/terraform-plugin-testing`, but
-pinned at `v1.11.0` — newer versions (`v1.12.0+`) require `go >= 1.23`,
-and this repo's `go.mod`/CI are pinned to `go 1.22`. Bumping the Go version
-to unlock newer `terraform-plugin-testing` (and other deps) is an open
-question, not yet decided — see the note at the end of this plan.
+Dependency note (historical): at the time this step was done, added
+`github.com/hashicorp/terraform-plugin-testing` pinned at `v1.11.0` —
+newer versions (`v1.12.0+`) required `go >= 1.23`, and this repo's
+`go.mod`/CI were pinned to `go 1.22`. That ceiling was later resolved —
+see "Resolved: bumped `go` to 1.25" further down — and
+`terraform-plugin-testing` is now at true latest (`v1.16.0`).
 
 ## Step 6: CI workflows
 
@@ -547,7 +543,8 @@ Verified locally (go1.25.12 downloaded to `/tmp/goroot125` for this
 session): `go build ./...`, `go vet ./...`, `gofmt -l .`,
 `go test ./...` all clean, `tfplugindocs generate` idempotent (one cosmetic
 formatting diff from the tool version bump itself, no content change).
-Not yet confirmed in CI — that's the next push.
+Confirmed green in CI too — `build`, `acceptance` (real sandbox), and
+`docs` all passed on the first push at this Go version (run 31279694650).
 
 ---
 

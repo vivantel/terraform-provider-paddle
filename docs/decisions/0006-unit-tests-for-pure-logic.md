@@ -47,16 +47,19 @@ status) — this decision doesn't replace them, it fills the layer below them.
 ## Consequences
 
 - New pure functions added to `internal/client` or `internal/provider`
-  (e.g. `paddle_discount`'s eventual `toAPIDiscount`/`fromAPIDiscount`, see
-  `docs/plans/paddle-provider-v1.md`) should get unit tests in the same PR,
-  per `docs/guardrails/pure-logic-needs-unit-tests.md`.
+  should get unit tests in the same PR, per
+  `docs/guardrails/pure-logic-needs-unit-tests.md` — followed since for
+  `paddle_discount`'s `toAPIDiscount`/`fromAPIDiscount`
+  (`discount_resource_test.go`), and again for `client.IsNotFound`,
+  `configureClient`, and the retry/budget logic added in the later
+  `/code-review high` pass.
 - `ci.yaml`'s build job now runs `go test ./...` — previously it only ran
   `go build`/`go vet`/`gofmt -l`, so tests could be added without ever
-  running in CI. This runs unconditionally (no `TF_ACC` needed) since only
-  unit tests exist right now; once acceptance tests are added per
-  [[0003-acceptance-tests-against-live-sandbox]], they'll skip themselves
-  via `testAccPreCheck` when `PADDLE_API_KEY` is unset, so this step stays
-  correct without modification.
+  running in CI. This runs unconditionally (no `TF_ACC` needed); acceptance
+  tests were added later per [[0003-acceptance-tests-against-live-sandbox]]
+  and skip themselves via `testAccPreCheck` when `PADDLE_API_KEY` is unset,
+  exactly as anticipated — this step needed no modification once they
+  existed.
 
 ## Related
 

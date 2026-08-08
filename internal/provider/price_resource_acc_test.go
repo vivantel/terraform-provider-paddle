@@ -28,8 +28,8 @@ func TestAccPaddlePrice_basic(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "product_id"),
 					// Regression coverage: quantity was left unset in
 					// config, so this must not perpetually plan as
-					// "known after apply" (docs/decisions client.go
-					// UseStateForUnknown fix on the quantity attribute).
+					// "known after apply" (price_resource.go's quantity
+					// Default/UseStateForUnknown fix).
 					resource.TestCheckResourceAttrSet(resourceName, "quantity.minimum"),
 					resource.TestCheckResourceAttrSet(resourceName, "quantity.maximum"),
 				),
