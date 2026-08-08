@@ -185,7 +185,16 @@ func toAPIDiscount(ctx context.Context, m DiscountResourceModel) (client.Discoun
 		Type:        m.Type.ValueString(),
 		Amount:      m.Amount.ValueString(),
 	}
-	if !m.Code.IsNull() {
+	// IsUnknown() check matters here specifically because code became
+	// Optional+Computed (see the schema comment on "code") — on Create
+	// with code omitted from config, it's Unknown (not Null) until Paddle
+	// generates one. IsNull() alone is false for an Unknown value too, so
+	// skipping the IsUnknown() check sent code: "" (ValueString() on an
+	// Unknown value silently returns the zero value) instead of omitting
+	// the field — confirmed against the real sandbox, Paddle rejected
+	// that outright ("Does not match pattern", "Invalid type. Expected:
+	// null, given: string").
+	if !m.Code.IsNull() && !m.Code.IsUnknown() {
 		v := m.Code.ValueString()
 		d.Code = &v
 	}

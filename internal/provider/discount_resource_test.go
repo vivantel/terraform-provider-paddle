@@ -89,6 +89,13 @@ func TestToAPIDiscount_UnknownDefaultedFieldsOmitted(t *testing.T) {
 	m.EnabledForCheckout = types.BoolUnknown()
 	m.Mode = types.StringUnknown()
 	m.Recur = types.BoolUnknown()
+	// code is also Optional+Computed (Paddle auto-generates it — see the
+	// schema comment) and was the one actually missed: real sandbox run
+	// 31278240955 sent code: "" (ValueString() on an Unknown value
+	// silently returns the zero value) instead of omitting the field,
+	// which Paddle rejected outright. IsNull() alone is false for Unknown
+	// too, so the fix needed an explicit IsUnknown() check here as well.
+	m.Code = types.StringUnknown()
 
 	d, diags := toAPIDiscount(context.Background(), m)
 	if diags.HasError() {
@@ -103,6 +110,9 @@ func TestToAPIDiscount_UnknownDefaultedFieldsOmitted(t *testing.T) {
 	}
 	if d.Recur != nil {
 		t.Errorf("Recur = %v, want nil (Unknown should be skipped)", d.Recur)
+	}
+	if d.Code != nil {
+		t.Errorf("Code = %q, want nil (Unknown should be skipped, not sent as empty string)", *d.Code)
 	}
 }
 
