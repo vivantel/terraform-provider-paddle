@@ -10,11 +10,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 const (
 	SandboxBaseURL    = "https://sandbox-api.paddle.com"
 	ProductionBaseURL = "https://api.paddle.com"
+
+	// defaultTimeout bounds a single request. http.DefaultClient has no
+	// timeout at all, so a stalled connection to Paddle would otherwise hang
+	// a terraform apply indefinitely — Terraform doesn't impose its own
+	// deadline on provider RPCs.
+	defaultTimeout = 30 * time.Second
 )
 
 type Client struct {
@@ -27,7 +34,7 @@ func New(baseURL, apiKey string) *Client {
 	return &Client{
 		BaseURL:    baseURL,
 		APIKey:     apiKey,
-		HTTPClient: http.DefaultClient,
+		HTTPClient: &http.Client{Timeout: defaultTimeout},
 	}
 }
 
@@ -87,14 +94,28 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 // ── Products — https://developer.paddle.com/api-reference/products ─────────
 
 type Product struct {
-	ID          string         `json:"id,omitempty"`
-	Name        string         `json:"name"`
-	TaxCategory string         `json:"tax_category"`
-	Description *string        `json:"description,omitempty"`
+	ID          string  `json:"id,omitempty"`
+	Name        string  `json:"name"`
+	TaxCategory string  `json:"tax_category"`
+	// Description and ImageURL deliberately lack `omitempty`: a nil pointer
+	// must marshal as an explicit JSON null so PATCH can clear a
+	// previously-set value, rather than omitting the field (which Paddle
+	// interprets as "leave unchanged").
+	Description *string        `json:"description"`
 	Type        string         `json:"type,omitempty"`
-	ImageURL    *string        `json:"image_url,omitempty"`
+	ImageURL    *string        `json:"image_url"`
 	CustomData  map[string]any `json:"custom_data,omitempty"`
 	Status      string         `json:"status,omitempty"`
+}
+
+// statusPatch is a minimal PATCH body used for archiving. It must not reuse
+// Product/Price directly: those structs' required fields (Name, TaxCategory,
+// ProductID, Description, UnitPrice) have no omitempty, so building one from
+// a zero-value struct would send empty-string values for them — Paddle
+// rejects an empty name/tax_category outright, and would otherwise silently
+// blank required-looking fields on price archival.
+type statusPatch struct {
+	Status string `json:"status"`
 }
 
 type productEnvelope struct {
@@ -128,8 +149,7 @@ func (c *Client) UpdateProduct(ctx context.Context, id string, p Product) (*Prod
 // Paddle has no hard-delete for products — archiving (status = "archived")
 // is the only supported removal. Terraform Delete calls this.
 func (c *Client) ArchiveProduct(ctx context.Context, id string) error {
-	_, err := c.UpdateProduct(ctx, id, Product{Status: "archived"})
-	return err
+	return c.do(ctx, http.MethodPatch, "/products/"+id, statusPatch{Status: "archived"}, nil)
 }
 
 // ── Prices — https://developer.paddle.com/api-reference/prices ─────────────
@@ -150,12 +170,15 @@ type Quantity struct {
 }
 
 type Price struct {
-	ID           string         `json:"id,omitempty"`
-	ProductID    string         `json:"product_id"`
-	Description  string         `json:"description"`
-	UnitPrice    Money          `json:"unit_price"`
-	Type         string         `json:"type,omitempty"`
-	Name         *string        `json:"name,omitempty"`
+	ID          string `json:"id,omitempty"`
+	ProductID   string `json:"product_id"`
+	Description string `json:"description"`
+	UnitPrice   Money  `json:"unit_price"`
+	Type        string `json:"type,omitempty"`
+	// Name deliberately lacks `omitempty` — see the comment on
+	// Product.Description; a nil pointer must marshal as an explicit null
+	// to clear a previously-set value via PATCH.
+	Name         *string        `json:"name"`
 	BillingCycle *BillingCycle  `json:"billing_cycle,omitempty"`
 	Quantity     *Quantity      `json:"quantity,omitempty"`
 	TaxMode      string         `json:"tax_mode,omitempty"`
@@ -193,6 +216,5 @@ func (c *Client) UpdatePrice(ctx context.Context, id string, p Price) (*Price, e
 
 // Same story as products — archive, not delete.
 func (c *Client) ArchivePrice(ctx context.Context, id string) error {
-	_, err := c.UpdatePrice(ctx, id, Price{Status: "archived"})
-	return err
+	return c.do(ctx, http.MethodPatch, "/prices/"+id, statusPatch{Status: "archived"}, nil)
 }

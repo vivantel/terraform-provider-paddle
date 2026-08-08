@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -68,7 +69,8 @@ func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"product_id": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Paddle product ID (`pro_...`) this price belongs to.",
+				MarkdownDescription: "Paddle product ID (`pro_...`) this price belongs to. Changing this replaces the price — Paddle prices aren't reparented in place.",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"description": schema.StringAttribute{
 				Required:            true,
@@ -119,6 +121,7 @@ func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Optional:            true,
 				Computed:            true,
 				MarkdownDescription: "Defaults to 1-100 if omitted.",
+				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
 				Attributes: map[string]schema.Attribute{
 					"minimum": schema.Int64Attribute{
 						Required: true,
@@ -166,7 +169,12 @@ func toAPIPrice(m PriceResourceModel) client.Price {
 			Frequency: m.BillingCycle.Frequency.ValueInt64(),
 		}
 	}
-	if m.Quantity != nil && !m.Quantity.Minimum.IsUnknown() {
+	// Minimum and Maximum are only ever unknown/known together in practice
+	// (both come from the same nested "quantity" object), but check both
+	// explicitly rather than assuming it: if only one were somehow unknown,
+	// ValueInt64() on the other would silently send 0 instead of the real
+	// bound.
+	if m.Quantity != nil && !m.Quantity.Minimum.IsUnknown() && !m.Quantity.Maximum.IsUnknown() {
 		p.Quantity = &client.Quantity{
 			Minimum: m.Quantity.Minimum.ValueInt64(),
 			Maximum: m.Quantity.Maximum.ValueInt64(),
