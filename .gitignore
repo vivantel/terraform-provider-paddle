@@ -1,0 +1,7 @@
+/terraform-provider-paddle
+/dist/
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+.DS_Store
