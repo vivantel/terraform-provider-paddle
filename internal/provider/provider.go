@@ -113,6 +113,8 @@ func (p *PaddleProvider) Resources(_ context.Context) []func() resource.Resource
 
 func (p *PaddleProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
+		NewProductDataSource,
+		NewPriceDataSource,
 		NewDiscountDataSource,
 	}
 }

@@ -58,6 +58,34 @@ func TestAccPaddlePrice_basic(t *testing.T) {
 	})
 }
 
+func TestAccPaddlePriceDataSource_basic(t *testing.T) {
+	dataSourceName := "data.paddle_price.test"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPriceArchived("paddle_price.test"),
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccPriceConfig("1500", "USD") + `
+data "paddle_price" "test" {
+  id = paddle_price.test.id
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPair(dataSourceName, "id", "paddle_price.test", "id"),
+					resource.TestCheckResourceAttrPair(dataSourceName, "product_id", "paddle_price.test", "product_id"),
+					resource.TestCheckResourceAttr(dataSourceName, "unit_price.amount", "1500"),
+					resource.TestCheckResourceAttr(dataSourceName, "unit_price.currency_code", "USD"),
+					resource.TestCheckResourceAttr(dataSourceName, "status", "active"),
+					resource.TestCheckResourceAttrSet(dataSourceName, "quantity.minimum"),
+					resource.TestCheckResourceAttrSet(dataSourceName, "quantity.maximum"),
+				),
+			},
+		},
+	})
+}
+
 func testAccPriceConfig(amount, currency string) string {
 	return fmt.Sprintf(`
 resource "paddle_product" "test" {

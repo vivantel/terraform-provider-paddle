@@ -59,6 +59,32 @@ func TestAccPaddleProduct_basic(t *testing.T) {
 	})
 }
 
+func TestAccPaddleProductDataSource_basic(t *testing.T) {
+	dataSourceName := "data.paddle_product.test"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckProductArchived("paddle_product.test"),
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccProductConfig("Acc Test Widget For Lookup", "standard", `"looked up via data source"`) + `
+data "paddle_product" "test" {
+  id = paddle_product.test.id
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrPair(dataSourceName, "id", "paddle_product.test", "id"),
+					resource.TestCheckResourceAttr(dataSourceName, "name", "Acc Test Widget For Lookup"),
+					resource.TestCheckResourceAttr(dataSourceName, "tax_category", "standard"),
+					resource.TestCheckResourceAttr(dataSourceName, "description", "looked up via data source"),
+					resource.TestCheckResourceAttr(dataSourceName, "status", "active"),
+				),
+			},
+		},
+	})
+}
+
 func testAccProductConfig(name, taxCategory, description string) string {
 	return fmt.Sprintf(`
 resource "paddle_product" "test" {

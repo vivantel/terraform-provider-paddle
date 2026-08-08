@@ -270,9 +270,22 @@ Files: `internal/provider/discount_resource.go`,
 
 ## Step 3: Retrofit `paddle_product` / `paddle_price`
 
-Status: partially done — ImportState (#1) already present in both resources
-(verified 2026-08-08, predates this plan); data sources (#2, #3) still
-missing — `ls internal/provider/` has no `*_data_source.go` files at all.
+Status: done — 2026-08-08. ImportState (#1) already present (predates this
+plan). Data sources (#2, #3) added:
+`internal/provider/product_data_source.go` / `price_data_source.go`, both
+reusing the resource's own model type (`ProductResourceModel`/
+`PriceResourceModel`) since the attribute sets match exactly — same
+approach already used for `paddle_discount`'s data source. Registered in
+`provider.go`. This also exercises the `GetPrice` question from the note
+below in practice: the price data source does a bare-ID `GetPrice` lookup,
+same as `ImportStatePassthroughID` already confirmed working — not yet
+re-confirmed against the sandbox for the data source specifically, that's
+the next CI push. Added acceptance test coverage for all three data
+sources (`TestAccPaddle{Product,Price,Discount}DataSource_basic`) — the
+discount data source existed since Step 2 but had no test until now.
+Local build/vet/gofmt/unit tests all clean; all three new acceptance tests
+skip cleanly with no `PADDLE_API_KEY` set, not yet run against the real
+sandbox.
 
 Implements: `docs/guardrails/catalog-resources-need-data-source.md`,
 `docs/guardrails/resources-need-import-support.md`.
