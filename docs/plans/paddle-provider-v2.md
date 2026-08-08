@@ -174,7 +174,28 @@ every push) — that revert is `acd6656`.
 
 ## Step 3: Acceptance test sweepers
 
-Status: not started
+Status: done, confirmed green against the real sandbox — 2026-08-08.
+Existing acceptance test configs across `paddle_product`/`paddle_price`/
+`paddle_discount` already contained "Acc Test" somewhere in their name/
+description fields (checked before assuming a rename was needed — it
+wasn't), so sweepers match that same substring case-insensitively
+(`isAccTestName`) rather than introducing a second convention.
+`internal/client/client.go` gained `ListProducts`/`ListPrices`/
+`ListDiscounts` (cursor-based `after` pagination, unit-tested against a
+`httptest` server for the has-more-cursor, stops-on-`has_more=false`, and
+empty-page-doesn't-infinite-loop cases) — sweepers are the first caller of
+any list endpoint in this provider. `internal/provider/sweep_test.go`
+registers `paddle_product`/`paddle_price`/`paddle_discount` sweepers via
+`resource.AddTestSweepers` + `TestMain`, each archiving (not deleting —
+same archive-not-delete pattern as the resources themselves) any
+non-archived object matching the naming convention; `paddle_product`
+declares `paddle_price` as a `Dependencies` entry so prices are swept
+first. Verified against the real sandbox not by invoking the `-sweep` CLI
+flag but by calling the sweeper function directly from a `TestAcc`-gated
+test (`TestAccSweepProducts_ArchivesLeakedTestObjects`, CI run confirmed
+below): creates a product outside Terraform entirely (the exact
+leaked-object scenario sweepers exist for), runs `sweepProducts`, confirms
+the object is archived afterward.
 
 Implements: [[0009-tflog-observability-and-acceptance-test-sweepers]].
 

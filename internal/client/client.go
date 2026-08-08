@@ -260,6 +260,26 @@ func parseRetryAfter(header string) (time.Duration, bool) {
 	return 0, false
 }
 
+// paginationMeta is the shared shape of Paddle list endpoints' `meta`
+// object (docs/decisions/0009 — only the `has_more` field is needed here,
+// per_page/estimated_total/next aren't used by anything in this client).
+type paginationMeta struct {
+	Pagination struct {
+		HasMore bool `json:"has_more"`
+	} `json:"pagination"`
+}
+
+// listPath builds a list-endpoint path with Paddle's `after` cursor
+// (the ID of the last item from the previous page) and a large per_page to
+// minimize round trips — used only by List* methods below, all of which
+// exist for acceptance test sweepers, not resource/data-source CRUD.
+func listPath(base, after string) string {
+	if after == "" {
+		return base + "?per_page=200"
+	}
+	return base + "?per_page=200&after=" + after
+}
+
 // ── Products — https://developer.paddle.com/api-reference/products ─────────
 
 type Product struct {
@@ -319,6 +339,31 @@ func (c *Client) UpdateProduct(ctx context.Context, id string, p Product) (*Prod
 // is the only supported removal. Terraform Delete calls this.
 func (c *Client) ArchiveProduct(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPatch, "/products/"+id, statusPatch{Status: "archived"}, nil)
+}
+
+type productListEnvelope struct {
+	Data []Product      `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+// ListProducts fetches every product, paging through Paddle's cursor-based
+// pagination (docs/decisions/0009's sweeper support — nothing else in this
+// provider needs a full listing today). Not used by any resource/data
+// source, only by acceptance test sweepers.
+func (c *Client) ListProducts(ctx context.Context) ([]Product, error) {
+	var all []Product
+	after := ""
+	for {
+		var env productListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/products", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
 }
 
 // ── Prices — https://developer.paddle.com/api-reference/prices ─────────────
@@ -410,6 +455,29 @@ func (c *Client) ArchivePrice(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPatch, "/prices/"+id, statusPatch{Status: "archived"}, nil)
 }
 
+type priceListEnvelope struct {
+	Data []Price        `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+// ListPrices — see ListProducts' comment; same pagination shape, same
+// sweeper-only purpose.
+func (c *Client) ListPrices(ctx context.Context) ([]Price, error) {
+	var all []Price
+	after := ""
+	for {
+		var env priceListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/prices", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
 // ── Discounts — https://developer.paddle.com/api-reference/discounts ───────
 //
 // Field list and update-immutability confirmed directly against
@@ -492,4 +560,27 @@ func (c *Client) UpdateDiscount(ctx context.Context, id string, d Discount) (*Di
 // (see statusPatch) in one place — it does not hit a different endpoint.
 func (c *Client) ArchiveDiscount(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPatch, "/discounts/"+id, statusPatch{Status: "archived"}, nil)
+}
+
+type discountListEnvelope struct {
+	Data []Discount     `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+// ListDiscounts — see ListProducts' comment; same pagination shape, same
+// sweeper-only purpose.
+func (c *Client) ListDiscounts(ctx context.Context) ([]Discount, error) {
+	var all []Discount
+	after := ""
+	for {
+		var env discountListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/discounts", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
 }
