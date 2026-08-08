@@ -81,10 +81,13 @@ Commits + `Refs:` trailers to the relevant `docs/decisions/`,
 
 ## Step 0: Manual prerequisites (not automatable by an agent)
 
-Status: in progress — GPG key generated + uploaded, all three secrets set;
-Registry "Publish a provider" flow was blocked on the repo being empty
-(fixed 2026-08-08 — master/feature/v1 pushed, master set as default), retry
-pending confirmation.
+Status: done — 2026-08-08. GPG key generated + uploaded, all three secrets
+set, Registry "Publish a provider" flow confirmed successful: `v0.1.0`
+published and live at
+`registry.terraform.io/providers/vivantel/paddle/0.1.0` with all 7 doc
+pages ingested, confirmed via the Registry's own API
+(`registry.terraform.io/v1/providers/vivantel/paddle` returns
+`"version":"0.1.0"`), not just assumed from a successful `git push`.
 
 These need a human with access to GitHub org settings, a terminal for GPG,
 and the Terraform Registry UI. List them explicitly so a fresh session
@@ -118,20 +121,17 @@ doesn't waste time trying to script around them.
       exists, this is just wiring it into CI). Done 2026-08-08, confirmed via
       `gh secret list` — `GPG_PRIVATE_KEY`, `PASSPHRASE`, `PADDLE_API_KEY` all
       present on `vivantel/terraform-provider-paddle`.
-- [ ] Register `vivantel/terraform-provider-paddle` with the Terraform
+- [x] Register `vivantel/terraform-provider-paddle` with the Terraform
       Registry's "Publish a provider" flow (registry.terraform.io → Publish
-      → Provider → connect the GitHub App). Do this after the GPG public key
-      above is already uploaded to the same account/namespace — the publish
-      flow expects a matching signing key to exist. This is what makes the
-      Registry actually ingest releases once GoReleaser starts producing
-      them — without it, GitHub Releases will exist but never show up on the
-      Registry.
+      → Provider → connect the GitHub App).
   - First attempt got HTTP 400 — root cause was the GitHub repo being
     completely empty (`defaultBranchRef` blank, nothing ever pushed).
     Fixed 2026-08-08: `master` (empty orphan root) and `feature/v1` (all
     work) both pushed to `origin`, `master` set as GitHub's default branch.
-    CI is green on `feature/v1` as of commit `4a0a77f`. Retry the publish
-    flow now that the repo has real content — not yet confirmed successful.
+    Retried successfully. Confirmed working end to end: pushing tag
+    `v0.1.0` produced a signed GitHub Release (15 platform builds +
+    `SHA256SUMS` + `.sig` + manifest) and the Registry ingested it —
+    `registry.terraform.io/providers/vivantel/paddle/0.1.0` is live.
 
 Nothing in Steps 1+ below is blocked on this step being done first — the
 code/CI work can proceed in parallel — but no tagged release will actually
@@ -492,22 +492,28 @@ Implements: [[0003-docs-via-tfplugindocs]].
 
 ## Step 8: First release
 
-Status: not started
+Status: done — 2026-08-08.
 
 Implements: [[0004-versioning-v0.1.0-and-changelog]],
 `docs/skills/release-with-kms-changelog.md`.
 
-1. Confirm Step 0 is fully done (GPG key in secrets, sandbox key in
-   secrets, repo registered with Terraform Registry).
-2. Run the `kms:changelog` skill to generate the initial `CHANGELOG.md` from
-   full commit history (no prior tag exists yet).
-3. Commit the changelog.
-4. `git tag v0.1.0 && git push origin v0.1.0` — this triggers
-   `.github/workflows/release.yml` from Step 6.
-5. Verify the GitHub Release was created with signed artifacts, then verify
-   the provider appears on the Terraform Registry at
-   `registry.terraform.io/providers/vivantel/paddle` within a few minutes
-   (Registry ingestion via the GitHub App webhook is not instant).
+1. ~~Confirm Step 0 is fully done.~~ Done.
+2. ~~Generate the initial `CHANGELOG.md`.~~ Done via `kms:changelog`
+   (`CHANGELOG.md`, commit `0c26880`).
+3. ~~Commit the changelog.~~ Done.
+4. ~~`git tag v0.1.0 && git push origin v0.1.0`.~~ Done — triggered
+   `.github/workflows/release.yaml` (run 31283001129), completed
+   successfully in ~5 minutes (15 platform builds, GPG-signed
+   `SHA256SUMS`).
+5. ~~Verify the GitHub Release and Registry ingestion.~~ Both confirmed:
+   GitHub Release `v0.1.0` has all 15 platform zips + `SHA256SUMS` +
+   `.sig` + manifest; Registry ingestion was near-instant (live on first
+   check) at `registry.terraform.io/providers/vivantel/paddle/0.1.0`,
+   with all 7 doc pages present.
+
+This provider's v1 is fully shipped: implemented, sandbox-verified,
+code-reviewed, merged, released, and live on the public Terraform
+Registry. `docs/plans/paddle-provider-v2.md` picks up from here.
 
 ---
 
