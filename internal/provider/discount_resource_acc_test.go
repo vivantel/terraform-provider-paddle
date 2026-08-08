@@ -1,0 +1,95 @@
+package provider
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+)
+
+func TestAccPaddleDiscount_basic(t *testing.T) {
+	resourceName := "paddle_discount.test"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckDiscountArchived(resourceName),
+		Steps: []resource.TestStep{
+			{
+				// Create, with enabled_for_checkout/mode/recur all left
+				// unset — this is exactly the path that crashed
+				// paddle_price's quantity on first sandbox apply (see
+				// docs/plans/paddle-provider-v1.md Step 5); confirms the
+				// Default fix applied here from the start actually works.
+				Config: providerConfig + testAccDiscountConfig("percentage", "10", "10% off acc test"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "type", "percentage"),
+					resource.TestCheckResourceAttr(resourceName, "amount", "10"),
+					resource.TestCheckResourceAttr(resourceName, "description", "10% off acc test"),
+					resource.TestCheckResourceAttr(resourceName, "enabled_for_checkout", "true"),
+					resource.TestCheckResourceAttr(resourceName, "mode", "standard"),
+					resource.TestCheckResourceAttr(resourceName, "recur", "false"),
+					resource.TestCheckResourceAttr(resourceName, "status", "active"),
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+				),
+			},
+			{
+				// Update: amount changes in place, no replacement.
+				Config: providerConfig + testAccDiscountConfig("percentage", "20", "20% off acc test"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "amount", "20"),
+					resource.TestCheckResourceAttr(resourceName, "description", "20% off acc test"),
+				),
+			},
+			{
+				// A second plan against the same config must be a no-op —
+				// the same regression class as paddle_price's quantity
+				// UseStateForUnknown/Default check.
+				Config:   providerConfig + testAccDiscountConfig("percentage", "20", "20% off acc test"),
+				PlanOnly: true,
+			},
+			{
+				// Import.
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func testAccDiscountConfig(discountType, amount, description string) string {
+	return fmt.Sprintf(`
+resource "paddle_discount" "test" {
+  type        = %[1]q
+  amount      = %[2]q
+  description = %[3]q
+}
+`, discountType, amount, description)
+}
+
+// testAccCheckDiscountArchived is this resource's CheckDestroy. Paddle has
+// no delete operation for discounts at all (not even an archive-specific
+// endpoint) — terraform destroy sets status: "archived" via a normal
+// update, so "destroyed" here means "status is archived", same pattern as
+// Product/Price's CheckDestroy.
+func testAccCheckDiscountArchived(resourceName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("resource not found in state: %s", resourceName)
+		}
+		id := rs.Primary.ID
+
+		d, err := newTestAccClient().GetDiscount(context.Background(), id)
+		if err != nil {
+			return fmt.Errorf("GetDiscount(%s) after destroy: %w", id, err)
+		}
+		if d.Status != "archived" {
+			return fmt.Errorf("discount %s status = %q after destroy, want archived", id, d.Status)
+		}
+		return nil
+	}
+}

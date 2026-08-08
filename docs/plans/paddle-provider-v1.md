@@ -188,7 +188,30 @@ File: `internal/client/client.go`
 
 ## Step 2: `paddle_discount` resource + data source
 
-Status: not started
+Status: done (pending sandbox confirmation) — 2026-08-08.
+`internal/provider/discount_resource.go` + `discount_data_source.go`
+written, registered in `provider.go`, full local build/vet/gofmt/unit
+tests clean. Applied all three lessons from Step 5's Price bugs up front
+rather than rediscovering them: `enabled_for_checkout`/`mode`/`recur` (the
+three Optional+Computed fields, matching Paddle's own defaults of
+true/standard/false) each have a real `Default` (`booldefault.StaticBool`/
+`stringdefault.StaticString`), not just `UseStateForUnknown`; `Read()`
+fetches only `id` via `GetAttribute`, not a full `state.Get`; and — unlike
+Price — Discount's update endpoint accepts the same fields as create plus
+`status`, confirmed directly against
+https://developer.paddle.com/api-reference/discounts/update-discount, so
+no separate `DiscountUpdate` type was needed. Also added `type`/`mode`
+enum validation via `terraform-plugin-framework-validators` (new
+dependency, pinned at v0.16.0 for the same `go 1.22` ceiling as
+`terraform-plugin-testing`) — the first schema validators in this repo;
+`paddle_product`/`paddle_price` predate this and don't have equivalent
+validators on their enum-like fields (`tax_category`, `type`, `tax_mode`),
+worth a retrofit pass later for consistency.
+`TestAccPaddleDiscount_basic` written (create with all three defaulted
+fields left unset — deliberately the exact path that crashed Price — plus
+update, no-op-plan check, and import) but **not yet run against the real
+sandbox**; confirm it passes in CI before considering this step fully done,
+the same way Price needed 3 rounds of real fixes despite passing locally.
 
 Implements: [[0001-catalog-only-scope-v1]],
 `docs/guardrails/catalog-resources-need-data-source.md`,
