@@ -205,6 +205,27 @@ func toAPIPrice(m PriceResourceModel) client.Price {
 	return p
 }
 
+// toAPIPriceUpdate builds the PATCH body for updating an existing price.
+// It reuses toAPIPrice for the fields they share, then drops ProductID —
+// Paddle's price-update endpoint rejects the field outright if present at
+// all (see client.PriceUpdate), and product_id is RequiresReplace in the
+// schema anyway, so it can never legitimately differ from what's already
+// on the price.
+func toAPIPriceUpdate(m PriceResourceModel) client.PriceUpdate {
+	full := toAPIPrice(m)
+	return client.PriceUpdate{
+		Description:  full.Description,
+		UnitPrice:    full.UnitPrice,
+		Type:         full.Type,
+		Name:         full.Name,
+		BillingCycle: full.BillingCycle,
+		Quantity:     full.Quantity,
+		TaxMode:      full.TaxMode,
+		CustomData:   full.CustomData,
+		Status:       full.Status,
+	}
+}
+
 func fromAPIPrice(p client.Price, m *PriceResourceModel) {
 	m.ID = types.StringValue(p.ID)
 	m.ProductID = types.StringValue(p.ProductID)
@@ -288,7 +309,7 @@ func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	updated, err := r.client.UpdatePrice(ctx, state.ID.ValueString(), toAPIPrice(plan))
+	updated, err := r.client.UpdatePrice(ctx, state.ID.ValueString(), toAPIPriceUpdate(plan))
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle price", err.Error())
 		return

@@ -186,6 +186,28 @@ type Price struct {
 	Status       string         `json:"status,omitempty"`
 }
 
+// PriceUpdate is the PATCH body for updating a price. It deliberately
+// excludes ProductID: confirmed against the real sandbox API (not just
+// inferred), Paddle rejects the update outright with "Additional property
+// product_id is not allowed" if it's present at all — this isn't "changes
+// to product_id are rejected," it's "the field can't appear in this
+// endpoint's payload, changed or not." Reusing Price for update bodies (as
+// an earlier version of this client did) breaks every price update.
+type PriceUpdate struct {
+	Description string `json:"description"`
+	UnitPrice   Money  `json:"unit_price"`
+	Type        string `json:"type,omitempty"`
+	// Name deliberately lacks `omitempty` — see the comment on
+	// Product.Description; a nil pointer must marshal as an explicit null
+	// to clear a previously-set value via PATCH.
+	Name         *string        `json:"name"`
+	BillingCycle *BillingCycle  `json:"billing_cycle,omitempty"`
+	Quantity     *Quantity      `json:"quantity,omitempty"`
+	TaxMode      string         `json:"tax_mode,omitempty"`
+	CustomData   map[string]any `json:"custom_data,omitempty"`
+	Status       string         `json:"status,omitempty"`
+}
+
 type priceEnvelope struct {
 	Data Price `json:"data"`
 }
@@ -206,7 +228,7 @@ func (c *Client) GetPrice(ctx context.Context, id string) (*Price, error) {
 	return &env.Data, nil
 }
 
-func (c *Client) UpdatePrice(ctx context.Context, id string, p Price) (*Price, error) {
+func (c *Client) UpdatePrice(ctx context.Context, id string, p PriceUpdate) (*Price, error) {
 	var env priceEnvelope
 	if err := c.do(ctx, http.MethodPatch, "/prices/"+id, p, &env); err != nil {
 		return nil, err

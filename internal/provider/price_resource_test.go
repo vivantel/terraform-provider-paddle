@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -90,6 +92,31 @@ func TestToAPIPrice_ClearingNameProducesNilPointer(t *testing.T) {
 
 	if got.Name != nil {
 		t.Errorf("Name = %q, want nil", *got.Name)
+	}
+}
+
+func TestToAPIPriceUpdate_NeverSendsProductID(t *testing.T) {
+	// Regression test: confirmed against the real sandbox API that Paddle
+	// rejects a price update outright ("Additional property product_id is
+	// not allowed") if product_id appears in the PATCH body at all — not
+	// just when it changes. client.PriceUpdate has no ProductID field, so
+	// this is really a compile-time guarantee; the test exists so a future
+	// refactor that merges PriceUpdate back into Price (reintroducing the
+	// bug) fails loudly here instead of only on a live sandbox apply.
+	m := baseModel()
+	m.Name = types.StringValue("Renamed")
+
+	got := toAPIPriceUpdate(m)
+
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), "product_id") {
+		t.Errorf("PriceUpdate JSON contains product_id, want it absent entirely: %s", b)
+	}
+	if got.Description != m.Description.ValueString() {
+		t.Errorf("Description = %q, want %q", got.Description, m.Description.ValueString())
 	}
 }
 
