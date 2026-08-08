@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
@@ -70,8 +71,14 @@ func (d *DiscountDataSource) Configure(_ context.Context, req datasource.Configu
 }
 
 func (d *DiscountDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	// Fetch just id, not the whole model — same reasoning as
+	// product_data_source.go. Discount has no nested struct-typed field
+	// today (RestrictTo is types.List, which handles null fine), so a
+	// full Config.Get isn't actually broken here, but staying consistent
+	// with the pattern that IS required for price_data_source.go avoids
+	// this becoming a trap for whoever adds a nested attribute next.
 	var config DiscountResourceModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("id"), &config.ID)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}

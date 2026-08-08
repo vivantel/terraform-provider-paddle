@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
 )
@@ -76,8 +77,17 @@ func (d *PriceDataSource) Configure(_ context.Context, req datasource.ConfigureR
 }
 
 func (d *PriceDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	// Fetch just id, not the whole model — same reasoning as
+	// price_resource.go's Read(). Only id is user-supplied in this data
+	// source's config; unit_price/billing_cycle/quantity are Computed-only
+	// here, so they're null in req.Config at this point, and decoding a
+	// null unit_price into the non-pointer unitPriceModel struct crashes
+	// the same way import did (confirmed against the real sandbox: "Value
+	// Conversion Error ... Path: unit_price, Target Type:
+	// provider.unitPriceModel"). id is all this needs before
+	// fromAPIPrice overwrites config wholesale below.
 	var config PriceResourceModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("id"), &config.ID)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
 )
@@ -55,8 +56,15 @@ func (d *ProductDataSource) Configure(_ context.Context, req datasource.Configur
 }
 
 func (d *ProductDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
+	// Fetch just id, not the whole model. Every ProductResourceModel field
+	// is types.String today, which handles a null Computed-only attribute
+	// fine at Read-time — so a full Config.Get isn't actually broken here
+	// the way it was for price_data_source.go — but fetching only what
+	// this method actually needs (id) before fromAPIProduct overwrites
+	// config wholesale below keeps this resource correct by construction,
+	// not by accident of which field types it happens to have today.
 	var config ProductResourceModel
-	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("id"), &config.ID)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
