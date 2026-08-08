@@ -59,6 +59,7 @@ func (d *PriceDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 					"maximum": schema.Int64Attribute{Computed: true},
 				},
 			},
+			"custom_data": schema.StringAttribute{Computed: true},
 		},
 	}
 }
@@ -91,6 +92,9 @@ func (d *PriceDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 		return
 	}
 
-	fromAPIPrice(*price, &config)
+	if err := fromAPIPrice(*price, &config); err != nil {
+		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }

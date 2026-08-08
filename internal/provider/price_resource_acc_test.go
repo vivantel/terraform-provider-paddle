@@ -86,6 +86,50 @@ data "paddle_price" "test" {
 	})
 }
 
+func TestAccPaddlePrice_customData(t *testing.T) {
+	resourceName := "paddle_price.test"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckPriceArchived(resourceName),
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccPriceConfigCustomData("1000", "USD", `{ internal_id = 123, tags = ["a", "b"] }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "custom_data"),
+				),
+			},
+			{
+				// Same data, different key order — must be a no-op plan,
+				// confirming the semantic-equality plan modifier works
+				// against real Paddle-round-tripped JSON.
+				Config:   providerConfig + testAccPriceConfigCustomData("1000", "USD", `{ tags = ["a", "b"], internal_id = 123 }`),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+func testAccPriceConfigCustomData(amount, currency, customDataHCL string) string {
+	return fmt.Sprintf(`
+resource "paddle_product" "test" {
+  name         = "Acc Test Price CD Parent"
+  tax_category = "standard"
+}
+
+resource "paddle_price" "test" {
+  product_id  = paddle_product.test.id
+  description = "acc test price custom_data"
+  unit_price = {
+    amount        = %[1]q
+    currency_code = %[2]q
+  }
+  custom_data = jsonencode(%[3]s)
+}
+`, amount, currency, customDataHCL)
+}
+
 func testAccPriceConfig(amount, currency string) string {
 	return fmt.Sprintf(`
 resource "paddle_product" "test" {

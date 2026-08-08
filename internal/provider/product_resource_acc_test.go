@@ -84,6 +84,54 @@ data "paddle_product" "test" {
 	})
 }
 
+func TestAccPaddleProduct_customData(t *testing.T) {
+	resourceName := "paddle_product.test"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckProductArchived(resourceName),
+		Steps: []resource.TestStep{
+			{
+				// Create with custom_data set, written the way the schema's
+				// own MarkdownDescription documents: jsonencode() over
+				// native HCL syntax, not a raw JSON string.
+				Config: providerConfig + testAccProductConfigCustomData("Acc Test Widget CD", `{ internal_id = 123, tags = ["a", "b"] }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "name", "Acc Test Widget CD"),
+					resource.TestCheckResourceAttrSet(resourceName, "custom_data"),
+				),
+			},
+			{
+				// Same data, different key order — must be a true no-op
+				// plan, confirming the semantic-equality plan modifier
+				// actually works against real Paddle-round-tripped JSON,
+				// not just the fabricated values in custom_data_test.go's
+				// unit tests.
+				Config:   providerConfig + testAccProductConfigCustomData("Acc Test Widget CD", `{ tags = ["a", "b"], internal_id = 123 }`),
+				PlanOnly: true,
+			},
+			{
+				// Genuinely different custom_data must still produce a diff.
+				Config: providerConfig + testAccProductConfigCustomData("Acc Test Widget CD", `{ internal_id = 456 }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "custom_data"),
+				),
+			},
+		},
+	})
+}
+
+func testAccProductConfigCustomData(name, customDataHCL string) string {
+	return fmt.Sprintf(`
+resource "paddle_product" "test" {
+  name         = %[1]q
+  tax_category = "standard"
+  custom_data  = jsonencode(%[2]s)
+}
+`, name, customDataHCL)
+}
+
 func testAccProductConfig(name, taxCategory, description string) string {
 	return fmt.Sprintf(`
 resource "paddle_product" "test" {

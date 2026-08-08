@@ -80,7 +80,20 @@ v1 commit did.
 
 ## Step 0: `custom_data` retrofit
 
-Status: not started
+Status: done, pending real-sandbox confirmation (next CI push) —
+2026-08-08. Modeled as a JSON-encoded `types.String` (confirmed against
+the API reference that `custom_data` is arbitrary nested JSON, not a flat
+string map — `types.Map` wouldn't fit) with a shared
+`customDataPlanModifier` doing semantic-equality comparison, in new
+`internal/provider/custom_data.go`, used by all three resources.
+`toAPIProduct`/`fromAPIProduct`/`toAPIPrice`/`fromAPIPrice` now return an
+error (malformed `custom_data` JSON is a real failure mode); `toAPIDiscount`/
+`fromAPIDiscount` already returned `diag.Diagnostics`, slotted in there.
+Unit tests centralized in `custom_data_test.go`. Acceptance tests added
+per resource (`TestAccPaddle{Product,Price,Discount}_customData`),
+including a `PlanOnly` step with re-ordered JSON keys to confirm the plan
+modifier actually works against real Paddle-round-tripped data, not just
+fabricated unit test values. Docs regenerated, no drift.
 
 Implements: [[0008-custom-data-and-enum-validator-retrofit]],
 `docs/guardrails/expose-custom-data-on-catalog-resources.md`.
@@ -104,16 +117,24 @@ Implements: [[0008-custom-data-and-enum-validator-retrofit]],
 
 ## Step 1: Enum validator retrofit
 
-Status: not started
+Status: done — 2026-08-08. `stringvalidator.OneOf` added to
+`paddle_product`'s `tax_category` and `type`, and `paddle_price`'s
+`tax_mode` (values reused from each attribute's existing
+`MarkdownDescription`, not re-derived). No client changes, no sandbox
+verification needed — pure schema-level validation.
+
+**Found along the way, not fixed here — new item, not silently folded
+in:** `paddle_price` doesn't actually expose a `type` attribute at all.
+[[0008-custom-data-and-enum-validator-retrofit]] assumed it existed and
+just needed a validator; `client.Price.Type` has the same "exists in the
+client struct, not in the resource schema" gap `custom_data` had before
+Step 0. Adding the attribute itself (with a correct `Default`/
+`UseStateForUnknown` — check what Paddle's `type` field on prices actually
+means and whether it needs the same care `quantity`/`code` needed) is
+bigger scope than "add a validator" and is its own future retrofit, not
+part of this step.
 
 Implements: [[0008-custom-data-and-enum-validator-retrofit]].
-
-1. Add `stringvalidator.OneOf` to `paddle_product`'s `tax_category`
-   (values already documented in its `MarkdownDescription` — reuse them,
-   don't re-derive) and `paddle_price`'s `type`/`tax_mode`.
-2. No client changes, no sandbox verification needed — pure schema-level
-   validation, confirm with `go build`/`go vet`/unit tests and a
-   regenerated docs diff only.
 
 ## Step 2: `tflog` debug logging
 

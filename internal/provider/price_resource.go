@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -11,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
@@ -52,6 +54,7 @@ type PriceResourceModel struct {
 	Quantity     *quantityModel     `tfsdk:"quantity"`
 	TaxMode      types.String       `tfsdk:"tax_mode"`
 	Status       types.String       `tfsdk:"status"`
+	CustomData   types.String       `tfsdk:"custom_data"`
 }
 
 func (r *PriceResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -85,6 +88,9 @@ func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Computed:            true,
 				MarkdownDescription: "`account_setting` (default), `external`, `internal`, or `location`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators: []validator.String{
+					stringvalidator.OneOf("account_setting", "external", "internal", "location"),
+				},
 			},
 			"status": schema.StringAttribute{
 				Computed:            true,
@@ -151,6 +157,7 @@ func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					},
 				},
 			},
+			"custom_data": customDataAttribute(),
 		},
 	}
 }
@@ -161,7 +168,7 @@ func (r *PriceResource) Configure(_ context.Context, req resource.ConfigureReque
 	r.client = c
 }
 
-func toAPIPrice(m PriceResourceModel) client.Price {
+func toAPIPrice(m PriceResourceModel) (client.Price, error) {
 	p := client.Price{
 		ProductID:   m.ProductID.ValueString(),
 		Description: m.Description.ValueString(),
@@ -194,7 +201,12 @@ func toAPIPrice(m PriceResourceModel) client.Price {
 			Maximum: m.Quantity.Maximum.ValueInt64(),
 		}
 	}
-	return p
+	customData, err := customDataToAPI(m.CustomData)
+	if err != nil {
+		return client.Price{}, err
+	}
+	p.CustomData = customData
+	return p, nil
 }
 
 // toAPIPriceUpdate builds the PATCH body for updating an existing price.
@@ -203,8 +215,11 @@ func toAPIPrice(m PriceResourceModel) client.Price {
 // all (see client.PriceUpdate), and product_id is RequiresReplace in the
 // schema anyway, so it can never legitimately differ from what's already
 // on the price.
-func toAPIPriceUpdate(m PriceResourceModel) client.PriceUpdate {
-	full := toAPIPrice(m)
+func toAPIPriceUpdate(m PriceResourceModel) (client.PriceUpdate, error) {
+	full, err := toAPIPrice(m)
+	if err != nil {
+		return client.PriceUpdate{}, err
+	}
 	return client.PriceUpdate{
 		Description:  full.Description,
 		UnitPrice:    full.UnitPrice,
@@ -215,10 +230,10 @@ func toAPIPriceUpdate(m PriceResourceModel) client.PriceUpdate {
 		TaxMode:      full.TaxMode,
 		CustomData:   full.CustomData,
 		Status:       full.Status,
-	}
+	}, nil
 }
 
-func fromAPIPrice(p client.Price, m *PriceResourceModel) {
+func fromAPIPrice(p client.Price, m *PriceResourceModel) error {
 	m.ID = types.StringValue(p.ID)
 	m.ProductID = types.StringValue(p.ProductID)
 	m.Description = types.StringValue(p.Description)
@@ -249,6 +264,12 @@ func fromAPIPrice(p client.Price, m *PriceResourceModel) {
 	} else {
 		m.Quantity = nil
 	}
+	customData, err := customDataFromAPI(p.CustomData)
+	if err != nil {
+		return err
+	}
+	m.CustomData = customData
+	return nil
 }
 
 func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -258,13 +279,22 @@ func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	created, err := r.client.CreatePrice(ctx, toAPIPrice(plan))
+	apiPrice, err := toAPIPrice(plan)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
+		return
+	}
+
+	created, err := r.client.CreatePrice(ctx, apiPrice)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Paddle price", err.Error())
 		return
 	}
 
-	fromAPIPrice(*created, &plan)
+	if err := fromAPIPrice(*created, &plan); err != nil {
+		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -295,7 +325,10 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	fromAPIPrice(*price, &state)
+	if err := fromAPIPrice(*price, &state); err != nil {
+		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -312,13 +345,22 @@ func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	updated, err := r.client.UpdatePrice(ctx, state.ID.ValueString(), toAPIPriceUpdate(plan))
+	apiPriceUpdate, err := toAPIPriceUpdate(plan)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
+		return
+	}
+
+	updated, err := r.client.UpdatePrice(ctx, state.ID.ValueString(), apiPriceUpdate)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle price", err.Error())
 		return
 	}
 
-	fromAPIPrice(*updated, &plan)
+	if err := fromAPIPrice(*updated, &plan); err != nil {
+		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 

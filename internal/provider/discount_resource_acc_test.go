@@ -90,6 +90,42 @@ data "paddle_discount" "test" {
 	})
 }
 
+func TestAccPaddleDiscount_customData(t *testing.T) {
+	resourceName := "paddle_discount.test"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             testAccCheckDiscountArchived(resourceName),
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + testAccDiscountConfigCustomData("percentage", "10", "10% off CD acc test", `{ internal_id = 123, tags = ["a", "b"] }`),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "custom_data"),
+				),
+			},
+			{
+				// Same data, different key order — must be a no-op plan,
+				// confirming the semantic-equality plan modifier works
+				// against real Paddle-round-tripped JSON.
+				Config:   providerConfig + testAccDiscountConfigCustomData("percentage", "10", "10% off CD acc test", `{ tags = ["a", "b"], internal_id = 123 }`),
+				PlanOnly: true,
+			},
+		},
+	})
+}
+
+func testAccDiscountConfigCustomData(discountType, amount, description, customDataHCL string) string {
+	return fmt.Sprintf(`
+resource "paddle_discount" "test" {
+  type        = %[1]q
+  amount      = %[2]q
+  description = %[3]q
+  custom_data = jsonencode(%[4]s)
+}
+`, discountType, amount, description, customDataHCL)
+}
+
 func testAccDiscountConfig(discountType, amount, description string) string {
 	return fmt.Sprintf(`
 resource "paddle_discount" "test" {

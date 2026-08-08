@@ -49,6 +49,7 @@ type DiscountResourceModel struct {
 	TimesUsed                 types.Int64  `tfsdk:"times_used"`
 	CreatedAt                 types.String `tfsdk:"created_at"`
 	UpdatedAt                 types.String `tfsdk:"updated_at"`
+	CustomData                types.String `tfsdk:"custom_data"`
 }
 
 func (r *DiscountResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -159,6 +160,7 @@ func (r *DiscountResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				Computed:            true,
 				MarkdownDescription: "RFC 3339 date-time this discount was last updated, set by Paddle. Deliberately has no UseStateForUnknown — it genuinely changes on every update, so it should show as \"known after apply\" whenever anything else changes.",
 			},
+			"custom_data": customDataAttribute(),
 		},
 	}
 }
@@ -226,6 +228,12 @@ func toAPIDiscount(ctx context.Context, m DiscountResourceModel) (client.Discoun
 		v := m.DiscountGroupID.ValueString()
 		d.DiscountGroupID = &v
 	}
+	customData, err := customDataToAPI(m.CustomData)
+	if err != nil {
+		diags.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
+		return d, diags
+	}
+	d.CustomData = customData
 	return d, diags
 }
 
@@ -289,6 +297,13 @@ func fromAPIDiscount(ctx context.Context, d client.Discount, m *DiscountResource
 	m.TimesUsed = types.Int64Value(int64(d.TimesUsed))
 	m.CreatedAt = types.StringValue(d.CreatedAt)
 	m.UpdatedAt = types.StringValue(d.UpdatedAt)
+
+	customData, err := customDataFromAPI(d.CustomData)
+	if err != nil {
+		diags.AddAttributeError(path.Root("custom_data"), "Invalid custom_data in Paddle response", err.Error())
+		return diags
+	}
+	m.CustomData = customData
 
 	return diags
 }

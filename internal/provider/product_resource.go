@@ -3,11 +3,13 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
@@ -32,6 +34,7 @@ type ProductResourceModel struct {
 	Type        types.String `tfsdk:"type"`
 	ImageURL    types.String `tfsdk:"image_url"`
 	Status      types.String `tfsdk:"status"`
+	CustomData  types.String `tfsdk:"custom_data"`
 }
 
 func (r *ProductResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -54,6 +57,13 @@ func (r *ProductResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 			"tax_category": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "One of: digital-goods, ebooks, implementation-services, professional-services, saas, software-programming-services, standard, training-services, website-hosting.",
+				Validators: []validator.String{
+					stringvalidator.OneOf(
+						"digital-goods", "ebooks", "implementation-services",
+						"professional-services", "saas", "software-programming-services",
+						"standard", "training-services", "website-hosting",
+					),
+				},
 			},
 			"description": schema.StringAttribute{
 				Optional: true,
@@ -63,6 +73,9 @@ func (r *ProductResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				Computed:            true,
 				MarkdownDescription: "`standard` or `custom`. Defaults to `standard`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Validators: []validator.String{
+					stringvalidator.OneOf("standard", "custom"),
+				},
 			},
 			"image_url": schema.StringAttribute{
 				Optional:            true,
@@ -73,6 +86,7 @@ func (r *ProductResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				MarkdownDescription: "`active` or `archived`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"custom_data": customDataAttribute(),
 		},
 	}
 }
@@ -83,7 +97,7 @@ func (r *ProductResource) Configure(_ context.Context, req resource.ConfigureReq
 	r.client = c
 }
 
-func toAPIProduct(m ProductResourceModel) client.Product {
+func toAPIProduct(m ProductResourceModel) (client.Product, error) {
 	p := client.Product{
 		Name:        m.Name.ValueString(),
 		TaxCategory: m.TaxCategory.ValueString(),
@@ -99,10 +113,15 @@ func toAPIProduct(m ProductResourceModel) client.Product {
 		v := m.ImageURL.ValueString()
 		p.ImageURL = &v
 	}
-	return p
+	customData, err := customDataToAPI(m.CustomData)
+	if err != nil {
+		return client.Product{}, err
+	}
+	p.CustomData = customData
+	return p, nil
 }
 
-func fromAPIProduct(p client.Product, m *ProductResourceModel) {
+func fromAPIProduct(p client.Product, m *ProductResourceModel) error {
 	m.ID = types.StringValue(p.ID)
 	m.Name = types.StringValue(p.Name)
 	m.TaxCategory = types.StringValue(p.TaxCategory)
@@ -118,6 +137,12 @@ func fromAPIProduct(p client.Product, m *ProductResourceModel) {
 		m.ImageURL = types.StringNull()
 	}
 	m.Status = types.StringValue(p.Status)
+	customData, err := customDataFromAPI(p.CustomData)
+	if err != nil {
+		return err
+	}
+	m.CustomData = customData
+	return nil
 }
 
 func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -127,13 +152,22 @@ func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	created, err := r.client.CreateProduct(ctx, toAPIProduct(plan))
+	apiProduct, err := toAPIProduct(plan)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
+		return
+	}
+
+	created, err := r.client.CreateProduct(ctx, apiProduct)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Paddle product", err.Error())
 		return
 	}
 
-	fromAPIProduct(*created, &plan)
+	if err := fromAPIProduct(*created, &plan); err != nil {
+		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -162,7 +196,10 @@ func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	fromAPIProduct(*product, &state)
+	if err := fromAPIProduct(*product, &state); err != nil {
+		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -179,13 +216,22 @@ func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	updated, err := r.client.UpdateProduct(ctx, state.ID.ValueString(), toAPIProduct(plan))
+	apiProduct, err := toAPIProduct(plan)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
+		return
+	}
+
+	updated, err := r.client.UpdateProduct(ctx, state.ID.ValueString(), apiProduct)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle product", err.Error())
 		return
 	}
 
-	fromAPIProduct(*updated, &plan)
+	if err := fromAPIProduct(*updated, &plan); err != nil {
+		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
