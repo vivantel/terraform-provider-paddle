@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 const (
@@ -97,6 +99,13 @@ func IsNotFound(err error) bool {
 // Any other non-2xx status, or the final attempt's failure, returns
 // *APIError unchanged — callers that check for a 404 via IsNotFound (see
 // every resource's Read()/Delete()) don't need to change.
+//
+// Logs at tflog.Debug level (visible via TF_LOG=debug) — method, path,
+// attempt number, and response status only. Request/response bodies are
+// deliberately never logged: custom_data or other fields may contain data
+// a user considers sensitive, and the API key must never appear in a log
+// line at any level (it's set as a header directly on req, never passed
+// to a logging call).
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, retryOverallBudget)
 	defer cancel()
@@ -125,6 +134,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 			reqBody = bytes.NewReader(bodyBytes)
 		}
 
+		tflog.Debug(ctx, "paddle: sending request", map[string]any{
+			"method":  method,
+			"path":    path,
+			"attempt": attempt,
+		})
+
 		req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reqBody)
 		if err != nil {
 			return fmt.Errorf("build request: %w", err)
@@ -137,6 +152,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 			// Transport-level errors (DNS, connection refused, context
 			// cancellation) aren't retried — only HTTP responses we can
 			// actually inspect a status code on are.
+			tflog.Debug(ctx, "paddle: request failed before a response", map[string]any{
+				"method": method, "path": path, "attempt": attempt, "error": err.Error(),
+			})
 			return fmt.Errorf("do request: %w", err)
 		}
 
@@ -145,6 +163,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		if err != nil {
 			return fmt.Errorf("read response body: %w", err)
 		}
+
+		tflog.Debug(ctx, "paddle: received response", map[string]any{
+			"method": method, "path": path, "attempt": attempt, "status": resp.StatusCode,
+		})
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			apiErr := &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
