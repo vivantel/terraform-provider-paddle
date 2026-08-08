@@ -275,8 +275,18 @@ func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, 
 }
 
 func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	// Fetch just the id attribute rather than decoding the whole model via
+	// req.State.Get: right after ImportStatePassthroughID (which sets only
+	// id, leaving every other attribute genuinely null) the framework
+	// calls this Read to fill in the rest, and a full Get() at that point
+	// tries to decode that null unit_price into unitPriceModel — a plain,
+	// non-pointer struct that (unlike types.String) can't represent null,
+	// which crashed the real sandbox import test with "Value Conversion
+	// Error: target type cannot handle null values, Path: unit_price".
+	// id is all this method needs before fromAPIPrice overwrites the rest
+	// of the model wholesale below.
 	var state PriceResourceModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
