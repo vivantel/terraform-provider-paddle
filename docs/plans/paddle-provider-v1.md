@@ -259,68 +259,85 @@ File: `internal/provider/provider.go`
 
 ## Step 5: Acceptance test suite
 
-Status: not started
+Status: done for `paddle_product`/`paddle_price` — 2026-08-08. Not yet
+covering `paddle_discount` since that resource doesn't exist yet (Step 2).
 
 Implements: [[0003-acceptance-tests-against-live-sandbox]],
 `docs/guardrails/acceptance-tests-require-tf-acc-gate.md`.
 
-1. Add `internal/provider/provider_test.go` (if it doesn't already exist)
-   with a shared `testAccPreCheck(t *testing.T)` that `t.Skip`s when
-   `PADDLE_API_KEY` is unset, and a `testAccProtoV6ProviderFactories` map
-   for use across test files (standard Plugin Framework acceptance test
-   boilerplate — see the `terraform-provider-development:provider-test-patterns`
-   skill in this environment for the exact pattern).
-2. For each of `paddle_product`, `paddle_price`, `paddle_discount`:
-   basic create/read test, an update test, an import test
-   (`ImportState: true, ImportStateVerify: true`), and a `CheckDestroy` that
-   calls the client directly to confirm the object is actually gone (or
-   archived, for discounts) in the sandbox after `terraform destroy`.
-3. Confirm locally with `TF_ACC=1 PADDLE_API_KEY=<sandbox key> go test ./... -v`
-   before relying on CI to catch failures.
+1. ~~Add `internal/provider/provider_test.go`~~ Done —
+   `testAccPreCheck`/`testAccProtoV6ProviderFactories`/`newTestAccClient`
+   shared helpers.
+2. ~~For each of `paddle_product`, `paddle_price`, `paddle_discount`~~ Done
+   for the two existing resources
+   (`product_resource_acc_test.go`/`price_resource_acc_test.go`): create,
+   update, a no-op-plan check specifically for the `quantity`
+   `UseStateForUnknown` regression, an explicit description-clearing step
+   for the omitempty regression, `ImportState`/`ImportStateVerify`, and
+   `CheckDestroy` asserting `status == "archived"` (not 404 — Paddle
+   archives, doesn't hard-delete). **Still needed:** the same suite for
+   `paddle_discount` once Step 2 exists.
+3. ~~Confirm locally~~ Confirmed locally 2026-08-08 with no
+   `PADDLE_API_KEY` set: `go test ./... -v` — unit tests pass for real,
+   both `TestAcc*` skip cleanly (`--- SKIP`). Full run against the actual
+   sandbox happens in CI (Step 6's `acceptance` job) — not yet confirmed
+   green there; watch the first `acceptance` job run on
+   `vivantel/terraform-provider-paddle`.
+
+Dependency note: added `github.com/hashicorp/terraform-plugin-testing`, but
+pinned at `v1.11.0` — newer versions (`v1.12.0+`) require `go >= 1.23`,
+and this repo's `go.mod`/CI are pinned to `go 1.22`. Bumping the Go version
+to unlock newer `terraform-plugin-testing` (and other deps) is an open
+question, not yet decided — see the note at the end of this plan.
 
 ## Step 6: CI workflows
 
-Status: not started
+Status: `ci.yaml`'s `acceptance` job done 2026-08-08 (see above); `docs` job
+and `.github/workflows/release.yml` still not started.
+`.goreleaser.yml`/`terraform-registry-manifest.json` already existed,
+predating this plan — not yet verified against the current template
+(#5 below still applies as a check, not a from-scratch build).
 
 Implements: `docs/guardrails/docs-must-be-regenerated-before-merge.md`,
 `docs/guardrails/acceptance-tests-require-tf-acc-gate.md`,
 [[0004-release-via-goreleaser-github-actions]].
 
-File: `.github/workflows/ci.yml` (new)
+File: `.github/workflows/ci.yaml` (exists)
 
-1. `unit` job: `go build ./...`, `go vet ./...`, `go test ./...` (no
-   `TF_ACC`, no secrets — must pass with zero external dependencies) on
-   every push/PR.
-2. `acceptance` job: same repo, sets `TF_ACC=1` and
+1. ~~`unit` job~~ Already existed as the `build` job (`go build`, `go vet`,
+   `gofmt -l`, `go test ./...`) — runs on every push/PR, no `TF_ACC`/secrets.
+2. ~~`acceptance` job~~ Done 2026-08-08: sets `TF_ACC=1` and
    `PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}`, runs
-   `go test ./... -run TestAcc -v`. Gate this to run on PRs from
-   trusted branches only (not forks) since it uses a real secret — use
-   `pull_request_target` carefully or restrict to `push` on `main` plus
-   manual `workflow_dispatch`, whichever fits the repo's actual trust model;
-   don't expose `PADDLE_API_KEY` to arbitrary fork PRs.
-3. `docs` job: run `tfplugindocs generate`, then `git diff --exit-code` —
-   fail if generation produced any diff against committed `docs/index.md` /
-   `docs/resources/*.md` / `docs/data-sources/*.md`.
+   `go test ./... -run TestAcc -v`. No extra fork-PR guard needed —
+   GitHub's default `pull_request` trigger already withholds repo secrets
+   from forked-PR runs, and every `TestAcc*` test's `testAccPreCheck` skips
+   (not fails) when `PADDLE_API_KEY` is empty, so a fork PR run just
+   reports everything skipped.
+3. **Still needed:** `docs` job — run `tfplugindocs generate`, then
+   `git diff --exit-code` — fail if generation produced any diff against
+   committed `docs/index.md` / `docs/resources/*.md` /
+   `docs/data-sources/*.md`. Depends on Step 7.
 
-File: `.github/workflows/release.yml` (new)
+File: `.github/workflows/release.yaml` (exists, but only has the
+`goreleaser` job from before this plan — not yet verified end-to-end)
 
-4. Triggered on tag push matching `v*`. Imports `GPG_PRIVATE_KEY` +
-   `PASSPHRASE` secrets (see Step 0), runs `goreleaser release --clean`.
+4. **Still needed:** confirm it's triggered correctly on tag push matching
+   `v*`, imports `GPG_PRIVATE_KEY` + `PASSPHRASE` secrets (see Step 0, now
+   done), runs `goreleaser release --clean`. Read the existing file before
+   assuming it needs changes — it may already be correct.
 
-File: `.goreleaser.yml` (new, repo root)
+File: `.goreleaser.yml` (exists, predates this plan)
 
-5. Standard `terraform-provider-scaffolding-framework` GoReleaser config:
-   builds for `darwin/linux/windows` × `amd64/arm64` (skip
-   `windows/arm64` if following the common HashiCorp template exactly —
-   check the current
-   `hashicorp/terraform-provider-scaffolding-framework` template's
-   `.goreleaser.yml` for the up-to-date target matrix and signing config
-   rather than hand-rolling it), produces `terraform-registry-manifest.json`
-   from `metadata.json`/version, sha256sums + GPG signs them.
+5. **Still needed:** verify its target matrix
+   (`darwin/linux/windows` × `amd64/arm64`), signing config, and
+   `terraform-registry-manifest.json` generation against the current
+   `hashicorp/terraform-provider-scaffolding-framework` template — it was
+   never confirmed against that template, just found already present.
 
-File: `terraform-registry-manifest.json` (new, repo root) — required by the
-Registry to know which protocol versions this provider supports (Plugin
-Framework providers use protocol version 6).
+File: `terraform-registry-manifest.json` (exists, predates this plan) —
+required by the Registry to know which protocol versions this provider
+supports (Plugin Framework providers use protocol version 6). Sanity-check
+its `protocol_versions` value once you're looking at this step.
 
 ## Step 7: Docs
 
@@ -360,6 +377,22 @@ Implements: [[0004-versioning-v0.1.0-and-changelog]],
    the provider appears on the Terraform Registry at
    `registry.terraform.io/providers/vivantel/paddle` within a few minutes
    (Registry ingestion via the GitHub App webhook is not instant).
+
+---
+
+## Open question: bump the `go` version?
+
+Not decided — flagging so it doesn't get silently resolved either way.
+`go.mod` is pinned at `go 1.22.0` (matching [[0001-existing-provider-baseline]]
+and `ci.yaml`'s `go-version: "1.22"`). While wiring up Step 5's acceptance
+tests, `terraform-plugin-testing@latest` (`v1.16.0`) turned out to require
+`go >= 1.25.8` — had to pin `v1.11.0` instead, the newest version still
+compatible with `go 1.22`. The same kind of ceiling will likely recur for
+other dependencies over time. Bumping `go.mod`'s `go` line and `ci.yaml`'s
+`go-version` to something newer (1.23+) would remove this ceiling, but is a
+real decision (raises the minimum Go version anyone building this provider
+from source needs) rather than a mechanical fix — resolve it explicitly,
+don't let it happen as a side effect of chasing one dependency version.
 
 ---
 

@@ -19,3 +19,23 @@ jobs:
       - run: go vet ./...
       - run: gofmt -l . | (! grep .)
       - run: go test ./...
+
+  acceptance:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.22"
+          cache: true
+      - run: go test ./... -run TestAcc -v
+        env:
+          TF_ACC: "1"
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+        # docs/decisions/0003-acceptance-tests-against-live-sandbox.md:
+        # every TestAcc* test's testAccPreCheck skips (not fails) when
+        # PADDLE_API_KEY is unset. GitHub doesn't inject repo secrets into
+        # `pull_request`-triggered runs for forked PRs, so this job just
+        # reports everything skipped on those runs rather than failing or
+        # leaking the sandbox key — no extra fork guard needed here.
