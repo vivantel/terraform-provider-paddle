@@ -2,6 +2,8 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -135,6 +137,32 @@ func TestDiscountJSON_ReadOnlyFieldsNeverSentInRequestBody(t *testing.T) {
 		if strings.Contains(string(b), `"`+field+`"`) {
 			t.Errorf("request body contains %q, want it entirely absent: %s", field, b)
 		}
+	}
+}
+
+func TestIsNotFound(t *testing.T) {
+	// Regression coverage for /code-review high findings: the 404 check
+	// (errors.As + StatusCode == 404) was copy-pasted identically in all
+	// three resources' Read(), using a magic 404, and was missing entirely
+	// from Delete() in all three — this is the shared helper both should
+	// use instead.
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "404 APIError", err: &APIError{StatusCode: 404}, want: true},
+		{name: "wrapped 404 APIError", err: fmt.Errorf("read: %w", &APIError{StatusCode: 404}), want: true},
+		{name: "non-404 APIError", err: &APIError{StatusCode: 400}, want: false},
+		{name: "non-APIError", err: errors.New("boom"), want: false},
+		{name: "nil error", err: nil, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsNotFound(tc.err); got != tc.want {
+				t.Errorf("IsNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 

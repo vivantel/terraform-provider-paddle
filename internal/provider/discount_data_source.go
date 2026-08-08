@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -59,14 +58,8 @@ func (d *DiscountDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 }
 
 func (d *DiscountDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError("Unexpected data source configure type", fmt.Sprintf("expected *client.Client, got %T", req.ProviderData))
-		return
-	}
+	c, diags := configureClient(req.ProviderData, "data source")
+	resp.Diagnostics.Append(diags...)
 	d.client = c
 }
 
@@ -90,5 +83,8 @@ func (d *DiscountDataSource) Read(ctx context.Context, req datasource.ReadReques
 	}
 
 	resp.Diagnostics.Append(fromAPIDiscount(ctx, *discount, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }

@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -158,14 +156,8 @@ func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 }
 
 func (r *PriceResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError("Unexpected resource configure type", fmt.Sprintf("expected *client.Client, got %T", req.ProviderData))
-		return
-	}
+	c, diags := configureClient(req.ProviderData, "resource")
+	resp.Diagnostics.Append(diags...)
 	r.client = c
 }
 
@@ -254,6 +246,8 @@ func fromAPIPrice(p client.Price, m *PriceResourceModel) {
 			Minimum: types.Int64Value(p.Quantity.Minimum),
 			Maximum: types.Int64Value(p.Quantity.Maximum),
 		}
+	} else {
+		m.Quantity = nil
 	}
 }
 
@@ -293,8 +287,7 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 
 	price, err := r.client.GetPrice(ctx, state.ID.ValueString())
 	if err != nil {
-		var apiErr *client.APIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if client.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -336,7 +329,9 @@ func (r *PriceResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		return
 	}
 
-	if err := r.client.ArchivePrice(ctx, state.ID.ValueString()); err != nil {
+	// A 404 means the price is already gone — successful destroy, not an
+	// error. Same tolerance Read() already has for the same status.
+	if err := r.client.ArchivePrice(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error archiving Paddle price", err.Error())
 	}
 }

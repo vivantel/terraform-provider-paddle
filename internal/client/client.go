@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -39,6 +40,15 @@ var (
 	// own exponential ceiling, but an unbounded wait on external input is
 	// still worth capping defensively.
 	retryMaxRetryAfter = 30 * time.Second
+	// retryOverallBudget bounds the whole do() call — every attempt, every
+	// backoff wait, combined — not just each individual HTTP request.
+	// Without this, a persistently *slow* (not fast-failing) backend could
+	// block a single call for minutes: up to retryMaxAttempts *
+	// defaultTimeout of request time, plus backoff, all sequential.
+	// context.WithTimeout always takes the earlier of two deadlines, so
+	// wrapping with this budget only ever tightens an already-bounded
+	// caller context — it never loosens an unbounded one beyond this.
+	retryOverallBudget = 60 * time.Second
 )
 
 type Client struct {
@@ -68,6 +78,17 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("paddle API error (status %d): %s", e.StatusCode, e.Body)
 }
 
+// IsNotFound reports whether err is a *APIError for a 404 response,
+// unwrapping as needed. Shared by every resource's Read() (an object
+// deleted outside Terraform should be dropped from state, not error) and
+// Delete() (archiving an already-gone object should succeed, not fail) —
+// previously each Read() reimplemented this identically with a magic 404,
+// and Delete() didn't check it at all.
+func IsNotFound(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
+}
+
 // do sends a request, retrying on 429 (rate limited) and 5xx (transient
 // upstream failure) with bounded exponential backoff. A Retry-After header
 // on a 429 takes precedence over the computed backoff when present. Any
@@ -76,6 +97,9 @@ func (e *APIError) Error() string {
 // product_resource.go/price_resource.go's 404-on-Read handling) don't need
 // to change.
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
+	ctx, cancel := context.WithTimeout(ctx, retryOverallBudget)
+	defer cancel()
+
 	var bodyBytes []byte
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -85,8 +109,14 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		bodyBytes = b
 	}
 
-	var lastErr error
-	for attempt := 1; attempt <= retryMaxAttempts; attempt++ {
+	// No upper bound on the loop header itself — every branch inside
+	// already returns explicitly (including the attempt == retryMaxAttempts
+	// case below), so an infinite `for` here is exactly as bounded in
+	// practice as `for attempt := 1; attempt <= retryMaxAttempts; attempt++`
+	// was, but without needing a vestigial `return` after the loop just to
+	// satisfy the compiler's control-flow analysis of a bound it can't
+	// prove is never exceeded.
+	for attempt := 1; ; attempt++ {
 		var reqBody io.Reader
 		if bodyBytes != nil {
 			// A fresh Reader per attempt: bytes.Reader is consumed after
@@ -120,7 +150,6 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 			if !isRetryableStatus(resp.StatusCode) || attempt == retryMaxAttempts {
 				return apiErr
 			}
-			lastErr = apiErr
 			if err := waitBeforeRetry(ctx, attempt, resp.Header.Get("Retry-After")); err != nil {
 				return err
 			}
@@ -134,10 +163,6 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		}
 		return nil
 	}
-	// Unreachable in practice — the loop always returns on its last
-	// iteration — but satisfies the compiler and guards against a future
-	// change to the loop bounds silently falling through.
-	return lastErr
 }
 
 func isRetryableStatus(statusCode int) bool {
@@ -151,6 +176,14 @@ func waitBeforeRetry(ctx context.Context, attempt int, retryAfterHeader string) 
 	d := backoffDelay(attempt)
 	if ra, ok := parseRetryAfter(retryAfterHeader); ok {
 		d = ra
+	}
+	// Even a zero/negative delay must still check ctx first — an
+	// already-cancelled context shouldn't let one more request through
+	// just because there was nothing to sleep for.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 	if d <= 0 {
 		return nil

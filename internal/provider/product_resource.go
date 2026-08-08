@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -80,14 +78,8 @@ func (r *ProductResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 }
 
 func (r *ProductResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError("Unexpected resource configure type", fmt.Sprintf("expected *client.Client, got %T", req.ProviderData))
-		return
-	}
+	c, diags := configureClient(req.ProviderData, "resource")
+	resp.Diagnostics.Append(diags...)
 	r.client = c
 }
 
@@ -146,16 +138,24 @@ func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest
 }
 
 func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	// Fetch just id, not the whole model. Every ProductResourceModel field
+	// is types.String today, which handles a null Computed-only attribute
+	// fine — so a full State.Get isn't actually broken here the way it
+	// was for price_resource.go's Read()/import (see that file's comment)
+	// — but fetching only what this method needs (id) before
+	// fromAPIProduct overwrites state wholesale below keeps this resource
+	// correct by construction, not by accident of which field types it
+	// happens to have today (/code-review high finding: this was the one
+	// resource still doing a full decode).
 	var state ProductResourceModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	product, err := r.client.GetProduct(ctx, state.ID.ValueString())
 	if err != nil {
-		var apiErr *client.APIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if client.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -197,7 +197,11 @@ func (r *ProductResource) Delete(ctx context.Context, req resource.DeleteRequest
 		return
 	}
 
-	if err := r.client.ArchiveProduct(ctx, state.ID.ValueString()); err != nil {
+	// A 404 here means the product is already gone (archived/deleted
+	// outside Terraform, or a prior partial destroy) — that's a
+	// successful destroy from Terraform's perspective, not an error, the
+	// same tolerance Read() already has for the same status.
+	if err := r.client.ArchiveProduct(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error archiving Paddle product", err.Error())
 	}
 }

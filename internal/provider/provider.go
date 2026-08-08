@@ -63,7 +63,7 @@ func (p *PaddleProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	}
 
 	apiKey := os.Getenv("PADDLE_API_KEY")
-	if !config.APIKey.IsNull() {
+	if !config.APIKey.IsNull() && !config.APIKey.IsUnknown() {
 		apiKey = config.APIKey.ValueString()
 	}
 	if apiKey == "" {
@@ -76,7 +76,7 @@ func (p *PaddleProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	}
 
 	environment := os.Getenv("PADDLE_ENVIRONMENT")
-	if !config.Environment.IsNull() {
+	if !config.Environment.IsNull() && !config.Environment.IsUnknown() {
 		environment = config.Environment.ValueString()
 	}
 	if environment == "" {

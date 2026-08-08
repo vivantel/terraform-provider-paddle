@@ -120,6 +120,33 @@ func TestToAPIPriceUpdate_NeverSendsProductID(t *testing.T) {
 	}
 }
 
+func TestFromAPIPrice_NilQuantityClearsStaleModelValue(t *testing.T) {
+	// Regression test for /code-review high finding: fromAPIPrice nulls
+	// out BillingCycle when absent from the API response (see the
+	// if/else two fields above in the source), but had no matching
+	// else-branch for Quantity — a model already populated with a
+	// Quantity from a prior plan/state kept that stale value instead of
+	// being cleared when the API response says there isn't one.
+	m := PriceResourceModel{
+		Quantity: &quantityModel{
+			Minimum: types.Int64Value(1),
+			Maximum: types.Int64Value(100),
+		},
+	}
+
+	fromAPIPrice(client.Price{
+		ID:          "pri_1",
+		ProductID:   "pro_123",
+		Description: "internal desc",
+		UnitPrice:   client.Money{Amount: "1000", CurrencyCode: "USD"},
+		Quantity:    nil,
+	}, &m)
+
+	if m.Quantity != nil {
+		t.Errorf("Quantity = %+v, want nil (API response had no quantity, stale model value should be cleared)", m.Quantity)
+	}
+}
+
 func TestFromAPIPrice_NilNameBecomesStringNull(t *testing.T) {
 	var m PriceResourceModel
 	fromAPIPrice(client.Price{

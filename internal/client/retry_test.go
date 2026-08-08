@@ -162,6 +162,45 @@ func TestDo_DoesNotRetryOtherClientErrors(t *testing.T) {
 	}
 }
 
+func TestDo_OverallBudgetBoundsSlowPersistentFailures(t *testing.T) {
+	// Regression test for /code-review high finding: the 30s per-attempt
+	// HTTP client timeout isn't wrapped by any overall budget across the
+	// 5-attempt retry loop, so a persistently *slow* (not fast-failing)
+	// backend can block a single call for minutes — up to 5 * 30s of
+	// request time plus jittered backoff, sequentially. retryOverallBudget
+	// wraps the whole do() call in a context.WithTimeout, which — since
+	// context.WithTimeout always takes the *earlier* of two deadlines —
+	// only ever tightens an already-bounded caller context, never loosens
+	// an unbounded one beyond this budget.
+	origBudget := retryOverallBudget
+	retryOverallBudget = 30 * time.Millisecond
+	t.Cleanup(func() { retryOverallBudget = origBudget })
+
+	withFastRetries(t) // so any actual retry attempts stay quick too
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Each individual response takes longer than the whole budget —
+		// simulates a hanging/slow backend, not a fast-failing one.
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(productEnvelope{Data: Product{ID: "pro_1"}})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-key")
+
+	start := time.Now()
+	_, err := c.GetProduct(context.Background(), "pro_1")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("GetProduct: got nil error against a backend slower than retryOverallBudget, want a timeout error")
+	}
+	if elapsed > 150*time.Millisecond {
+		t.Errorf("GetProduct took %v, want bounded near retryOverallBudget (30ms) — a slow backend must not be allowed to block for the full per-attempt timeout on every retry", elapsed)
+	}
+}
+
 func TestWaitBeforeRetry_RespectsContextCancellation(t *testing.T) {
 	// Tests waitBeforeRetry directly rather than through a full do() retry
 	// loop over real HTTP round trips. An earlier version of this test
@@ -194,5 +233,23 @@ func TestWaitBeforeRetry_RespectsContextCancellation(t *testing.T) {
 	// context must short-circuit that near-instantly, not sleep through it.
 	if elapsed > 100*time.Millisecond {
 		t.Errorf("waitBeforeRetry took %v with an already-cancelled context, want near-instant return", elapsed)
+	}
+}
+
+func TestWaitBeforeRetry_ZeroDelayStillRespectsCancellation(t *testing.T) {
+	// Regression test for /code-review high finding: when the computed
+	// delay is <= 0, waitBeforeRetry returned nil immediately without ever
+	// checking ctx.Done() — the select below that check exists specifically
+	// to perform is skipped entirely. A Retry-After: 0 header is a clean,
+	// deterministic way to force d == 0 without going through
+	// backoffDelay's jitter (rand.Int63n(0) would panic, and jitter is
+	// nondeterministic besides) — parseRetryAfter("0") returns (0, true).
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled
+
+	err := waitBeforeRetry(ctx, 1, "0")
+
+	if err == nil {
+		t.Fatal("waitBeforeRetry: got nil error with an already-cancelled context and a zero delay, want the context's cancellation error")
 	}
 }

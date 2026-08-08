@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -166,14 +164,8 @@ func (r *DiscountResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 }
 
 func (r *DiscountResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-	c, ok := req.ProviderData.(*client.Client)
-	if !ok {
-		resp.Diagnostics.AddError("Unexpected resource configure type", fmt.Sprintf("expected *client.Client, got %T", req.ProviderData))
-		return
-	}
+	c, diags := configureClient(req.ProviderData, "resource")
+	resp.Diagnostics.Append(diags...)
 	r.client = c
 }
 
@@ -321,6 +313,9 @@ func (r *DiscountResource) Create(ctx context.Context, req resource.CreateReques
 	}
 
 	resp.Diagnostics.Append(fromAPIDiscount(ctx, *created, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -339,8 +334,7 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 
 	discount, err := r.client.GetDiscount(ctx, state.ID.ValueString())
 	if err != nil {
-		var apiErr *client.APIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		if client.IsNotFound(err) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -349,6 +343,9 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 	}
 
 	resp.Diagnostics.Append(fromAPIDiscount(ctx, *discount, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -378,6 +375,9 @@ func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 
 	resp.Diagnostics.Append(fromAPIDiscount(ctx, *updated, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -388,7 +388,9 @@ func (r *DiscountResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	if err := r.client.ArchiveDiscount(ctx, state.ID.ValueString()); err != nil {
+	// A 404 means the discount is already gone — successful destroy, not
+	// an error. Same tolerance Read() already has for the same status.
+	if err := r.client.ArchiveDiscount(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
 		resp.Diagnostics.AddError("Error archiving Paddle discount", err.Error())
 	}
 }
