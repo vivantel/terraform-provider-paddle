@@ -259,8 +259,18 @@ File: `internal/provider/provider.go`
 
 ## Step 5: Acceptance test suite
 
-Status: done for `paddle_product`/`paddle_price` — 2026-08-08. Not yet
-covering `paddle_discount` since that resource doesn't exist yet (Step 2).
+Status: done for `paddle_product`/`paddle_price` — confirmed green against
+the real sandbox 2026-08-08 (CI run 31273040459), after fixing 3 real bugs
+the acceptance job caught (quantity Default, price update sending
+product_id, price Read() full-decode breaking import — see commits
+71e7f76/3fdc64c/4b49a92). Not yet covering `paddle_discount` since that
+resource doesn't exist yet (Step 2) — when it's built, apply these same
+three patterns from the start rather than rediscovering them: give any
+Optional+Computed nested attribute a real Default (not just
+UseStateForUnknown), never reuse a Create body type for an Update PATCH
+without checking what fields the API actually accepts there, and fetch
+only `id` in Read() rather than fully decoding state if the model has any
+Required nested (non-types.Object, non-pointer) attribute.
 
 Implements: [[0003-acceptance-tests-against-live-sandbox]],
 `docs/guardrails/acceptance-tests-require-tf-acc-gate.md`.
