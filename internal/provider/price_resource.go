@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -122,6 +124,26 @@ func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				Computed:            true,
 				MarkdownDescription: "Defaults to 1-100 if omitted.",
 				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+				// Required so this is never Unknown on Create: an
+				// Optional+Computed nested attribute with nothing in
+				// config plans as Unknown when there's no prior state to
+				// draw UseStateForUnknown from, and *quantityModel (a
+				// plain struct pointer) can't represent Unknown — that
+				// combination crashed the very first real sandbox apply
+				// with "Value Conversion Error: target type cannot handle
+				// unknown values". A static default matching Paddle's own
+				// documented 1-100 default means it's always a known
+				// value by the time Create() decodes the plan.
+				Default: objectdefault.StaticValue(types.ObjectValueMust(
+					map[string]attr.Type{
+						"minimum": types.Int64Type,
+						"maximum": types.Int64Type,
+					},
+					map[string]attr.Value{
+						"minimum": types.Int64Value(1),
+						"maximum": types.Int64Value(100),
+					},
+				)),
 				Attributes: map[string]schema.Attribute{
 					"minimum": schema.Int64Attribute{
 						Required: true,
