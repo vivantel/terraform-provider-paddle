@@ -124,7 +124,24 @@ reach the Terraform Registry until Step 0 is complete.
 
 ## Step 1: Client — retry/backoff + Discounts endpoints
 
-Status: not started
+Status: done — 2026-08-08. Retry/backoff implemented in `do()` (429 + 5xx,
+full-jitter exponential backoff, `Retry-After` honored and capped, respects
+`ctx` cancellation during the wait). `Discount` struct + `CreateDiscount`/
+`GetDiscount`/`UpdateDiscount`/`ArchiveDiscount` added to
+`internal/client/client.go`, field list confirmed directly against
+https://developer.paddle.com/api-reference/discounts/create-discount and
+`.../update-discount` (not guessed, and not from a `paddle:*` skill — none
+of those cover raw API schema for provider development, they're all
+Next.js-app-integration-focused). Unlike Price, Discount's update accepts
+the same fields as create plus `status` — no field is rejected the way
+Price rejects `product_id` on update — so one struct covers both bodies.
+7 new tests in `internal/client/retry_test.go` (429/5xx retry-then-succeed,
+`Retry-After` honored, gives up after max attempts as `*APIError`, doesn't
+retry a plain 404, respects context cancellation mid-backoff) plus 2 more
+in `client_test.go` for `Discount` JSON marshaling — all passing locally
+(~1s total, most of that one deliberate 1s `Retry-After` timing check).
+Not yet exercised against the real sandbox (that only happens once Step 2
+builds a resource that calls these methods).
 
 Implements: [[0005-http-client-retry-backoff]], and the client-side prep for
 `paddle_discount` from [[0001-catalog-only-scope-v1]].

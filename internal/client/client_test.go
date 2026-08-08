@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -80,6 +81,60 @@ func TestPriceJSON_NilNameMarshalsAsExplicitNull(t *testing.T) {
 			}
 			assertJSONEqual(t, b, tc.want)
 		})
+	}
+}
+
+func TestDiscountJSON_NilOptionalFieldsMarshalAsExplicitNull(t *testing.T) {
+	code := "SAVE10"
+
+	tests := []struct {
+		name string
+		d    Discount
+		want string
+	}{
+		{
+			name: "unset nullable fields marshal as null, not omitted",
+			d:    Discount{Description: "10% off", Type: "percentage", Amount: "10"},
+			want: `{"description":"10% off","type":"percentage","amount":"10",
+				"code":null,"currency_code":null,"maximum_recurring_intervals":null,
+				"usage_limit":null,"restrict_to":null,"expires_at":null,"discount_group_id":null}`,
+		},
+		{
+			name: "set code marshals its value, other nullable fields stay null",
+			d:    Discount{Description: "10% off", Type: "percentage", Amount: "10", Code: &code},
+			want: `{"description":"10% off","type":"percentage","amount":"10",
+				"code":"SAVE10","currency_code":null,"maximum_recurring_intervals":null,
+				"usage_limit":null,"restrict_to":null,"expires_at":null,"discount_group_id":null}`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := json.Marshal(tc.d)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			assertJSONEqual(t, b, tc.want)
+		})
+	}
+}
+
+func TestDiscountJSON_ReadOnlyFieldsNeverSentInRequestBody(t *testing.T) {
+	// A Discount built from a resource model (as toAPIDiscount will do,
+	// once the paddle_discount resource exists — see
+	// docs/plans/paddle-provider-v1.md Step 2) never sets TimesUsed/
+	// CreatedAt/UpdatedAt; they're populated only by unmarshaling a
+	// response. Confirms they stay omitted (not sent as 0/"") in that case.
+	d := Discount{Description: "10% off", Type: "percentage", Amount: "10"}
+
+	b, err := json.Marshal(d)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	for _, field := range []string{"times_used", "created_at", "updated_at"} {
+		if strings.Contains(string(b), `"`+field+`"`) {
+			t.Errorf("request body contains %q, want it entirely absent: %s", field, b)
+		}
 	}
 }
 

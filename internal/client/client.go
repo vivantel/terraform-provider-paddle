@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -22,6 +24,21 @@ const (
 	// a terraform apply indefinitely — Terraform doesn't impose its own
 	// deadline on provider RPCs.
 	defaultTimeout = 30 * time.Second
+)
+
+// Retry tuning. Package vars, not consts, so tests can shrink them for
+// speed rather than a production-realistic test suite taking 10+ seconds
+// asserting backoff timing.
+var (
+	retryMaxAttempts = 5
+	retryBaseBackoff = 500 * time.Millisecond
+	retryMaxBackoff  = 10 * time.Second
+	// retryMaxRetryAfter caps how long a server-supplied Retry-After header
+	// can make us wait, independent of retryMaxBackoff — a legitimate
+	// heavy-throttling response might reasonably ask for longer than our
+	// own exponential ceiling, but an unbounded wait on external input is
+	// still worth capping defensively.
+	retryMaxRetryAfter = 30 * time.Second
 )
 
 type Client struct {
@@ -51,44 +68,140 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("paddle API error (status %d): %s", e.StatusCode, e.Body)
 }
 
+// do sends a request, retrying on 429 (rate limited) and 5xx (transient
+// upstream failure) with bounded exponential backoff. A Retry-After header
+// on a 429 takes precedence over the computed backoff when present. Any
+// other non-2xx status, or the final attempt's failure, returns *APIError
+// unchanged — callers that already type-assert for *APIError (see
+// product_resource.go/price_resource.go's 404-on-Read handling) don't need
+// to change.
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
-	var reqBody io.Reader
+	var bodyBytes []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return fmt.Errorf("marshal request body: %w", err)
 		}
-		reqBody = bytes.NewReader(b)
+		bodyBytes = b
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reqBody)
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("do request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response body: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
-	}
-
-	if out != nil {
-		if err := json.Unmarshal(respBody, out); err != nil {
-			return fmt.Errorf("unmarshal response body: %w", err)
+	var lastErr error
+	for attempt := 1; attempt <= retryMaxAttempts; attempt++ {
+		var reqBody io.Reader
+		if bodyBytes != nil {
+			// A fresh Reader per attempt: bytes.Reader is consumed after
+			// one send, and body must survive being sent again on retry.
+			reqBody = bytes.NewReader(bodyBytes)
 		}
+
+		req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reqBody)
+		if err != nil {
+			return fmt.Errorf("build request: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			// Transport-level errors (DNS, connection refused, context
+			// cancellation) aren't retried — only HTTP responses we can
+			// actually inspect a status code on are.
+			return fmt.Errorf("do request: %w", err)
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("read response body: %w", err)
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			apiErr := &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
+			if !isRetryableStatus(resp.StatusCode) || attempt == retryMaxAttempts {
+				return apiErr
+			}
+			lastErr = apiErr
+			if err := waitBeforeRetry(ctx, attempt, resp.Header.Get("Retry-After")); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if out != nil {
+			if err := json.Unmarshal(respBody, out); err != nil {
+				return fmt.Errorf("unmarshal response body: %w", err)
+			}
+		}
+		return nil
 	}
-	return nil
+	// Unreachable in practice — the loop always returns on its last
+	// iteration — but satisfies the compiler and guards against a future
+	// change to the loop bounds silently falling through.
+	return lastErr
+}
+
+func isRetryableStatus(statusCode int) bool {
+	return statusCode == http.StatusTooManyRequests || statusCode >= 500
+}
+
+// waitBeforeRetry sleeps for the retry delay, or returns early with ctx's
+// error if it's cancelled/times out during the wait — a caller that gave
+// up shouldn't be kept waiting through a multi-second backoff.
+func waitBeforeRetry(ctx context.Context, attempt int, retryAfterHeader string) error {
+	d := backoffDelay(attempt)
+	if ra, ok := parseRetryAfter(retryAfterHeader); ok {
+		d = ra
+	}
+	if d <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+// backoffDelay computes a full-jitter exponential delay for the given
+// 1-indexed attempt number: a random duration in [0, min(base*2^(n-1), max)).
+func backoffDelay(attempt int) time.Duration {
+	d := retryBaseBackoff * time.Duration(1<<uint(attempt-1))
+	if d > retryMaxBackoff || d <= 0 {
+		d = retryMaxBackoff
+	}
+	return time.Duration(rand.Int63n(int64(d)))
+}
+
+// parseRetryAfter parses a Retry-After header per RFC 7231 §7.1.3 — either
+// an integer number of seconds, or an HTTP-date. Returns ok=false if the
+// header is absent or unparsable, so the caller falls back to the computed
+// exponential backoff.
+func parseRetryAfter(header string) (time.Duration, bool) {
+	if header == "" {
+		return 0, false
+	}
+	if secs, err := strconv.Atoi(header); err == nil {
+		if secs < 0 {
+			return 0, false
+		}
+		d := time.Duration(secs) * time.Second
+		if d > retryMaxRetryAfter {
+			d = retryMaxRetryAfter
+		}
+		return d, true
+	}
+	if t, err := http.ParseTime(header); err == nil {
+		d := time.Until(t)
+		if d <= 0 {
+			return 0, true
+		}
+		if d > retryMaxRetryAfter {
+			d = retryMaxRetryAfter
+		}
+		return d, true
+	}
+	return 0, false
 }
 
 // ── Products — https://developer.paddle.com/api-reference/products ─────────
@@ -239,4 +352,88 @@ func (c *Client) UpdatePrice(ctx context.Context, id string, p PriceUpdate) (*Pr
 // Same story as products — archive, not delete.
 func (c *Client) ArchivePrice(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPatch, "/prices/"+id, statusPatch{Status: "archived"}, nil)
+}
+
+// ── Discounts — https://developer.paddle.com/api-reference/discounts ───────
+//
+// Field list and update-immutability confirmed directly against
+// https://developer.paddle.com/api-reference/discounts/create-discount and
+// .../update-discount (2026-08-08), not guessed. Unlike Price, Discount's
+// update endpoint accepts the same field set as create plus `status` — no
+// field is rejected outright the way Price rejects product_id on update —
+// so a single struct covers both request bodies; id/times_used/created_at/
+// updated_at/import_meta are create-and-update-immutable (Paddle sets them)
+// and use `omitempty` so a zero-value Go field never sends them.
+
+type Discount struct {
+	ID          string `json:"id,omitempty"`
+	Description string `json:"description"`
+	// Type: "flat", "flat_per_seat", or "percentage".
+	Type string `json:"type"`
+	// Amount: "0.01"-"100" for percentage, lowest currency denomination
+	// for flat/flat_per_seat.
+	Amount string `json:"amount"`
+	// Code, CurrencyCode, MaximumRecurringIntervals, UsageLimit, RestrictTo,
+	// ExpiresAt, and DiscountGroupID all deliberately lack `omitempty` —
+	// same reasoning as Product.Description: Paddle docs mark them
+	// nullable, and a nil pointer/nil slice must marshal as explicit null
+	// so PATCH can clear a previously-set value rather than silently
+	// leaving it unchanged (see docs/decisions/0006-unit-tests-for-pure-logic.md's
+	// account of the same class of bug on Product/Price).
+	Code                      *string        `json:"code"`
+	EnabledForCheckout        *bool          `json:"enabled_for_checkout,omitempty"`
+	Mode                      string         `json:"mode,omitempty"`
+	CurrencyCode              *string        `json:"currency_code"`
+	Recur                     *bool          `json:"recur,omitempty"`
+	MaximumRecurringIntervals *int           `json:"maximum_recurring_intervals"`
+	UsageLimit                *int           `json:"usage_limit"`
+	RestrictTo                []string       `json:"restrict_to"`
+	ExpiresAt                 *string        `json:"expires_at"`
+	CustomData                map[string]any `json:"custom_data,omitempty"`
+	DiscountGroupID           *string        `json:"discount_group_id"`
+	Status                    string         `json:"status,omitempty"`
+	// Read-only, Paddle-assigned — never sent in a request body regardless
+	// of Go zero-value, since all three have omitempty.
+	TimesUsed int    `json:"times_used,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+type discountEnvelope struct {
+	Data Discount `json:"data"`
+}
+
+func (c *Client) CreateDiscount(ctx context.Context, d Discount) (*Discount, error) {
+	var env discountEnvelope
+	if err := c.do(ctx, http.MethodPost, "/discounts", d, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) GetDiscount(ctx context.Context, id string) (*Discount, error) {
+	var env discountEnvelope
+	if err := c.do(ctx, http.MethodGet, "/discounts/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) UpdateDiscount(ctx context.Context, id string, d Discount) (*Discount, error) {
+	var env discountEnvelope
+	if err := c.do(ctx, http.MethodPatch, "/discounts/"+id, d, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// Paddle has no delete operation for discounts at all (not even the
+// archive-via-update pattern Product/Price happen to share a name with by
+// convention) — the docs are explicit: "There's no delete operation for
+// discounts." Archiving is just a normal UpdateDiscount call with
+// status: "archived", so this only exists for symmetry with
+// ArchiveProduct/ArchivePrice and to keep the archive-body-shape reasoning
+// (see statusPatch) in one place — it does not hit a different endpoint.
+func (c *Client) ArchiveDiscount(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodPatch, "/discounts/"+id, statusPatch{Status: "archived"}, nil)
 }
