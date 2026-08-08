@@ -60,7 +60,7 @@ Full schema reference and more examples: [`docs/`](docs/index.md), or on the [Te
 
 ## Development
 
-Requires Go 1.22+.
+Requires Go 1.25+ (bumped from 1.22 on 2026-08-08 — see `docs/plans/paddle-provider-v1.md`'s resolved "Open question: bump the go version?").
 
 ```bash
 go build ./...
@@ -77,7 +77,7 @@ TF_ACC=1 PADDLE_API_KEY=<your sandbox key> go test ./... -run TestAcc -v
 Docs (`docs/`) are generated from schema + `examples/`, not hand-written — regenerate after any schema change:
 
 ```bash
-go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.19.4  # @latest needs go >= 1.25
+go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@latest
 tfplugindocs generate
 ```
 

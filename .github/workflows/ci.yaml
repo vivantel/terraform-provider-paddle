@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - run: go mod tidy
       - run: go build ./...
@@ -27,18 +27,20 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
         # terraform-plugin-testing (via hc-install) auto-downloads a
         # Terraform CLI binary if it can't find one on PATH, and that
-        # download's own GPG signature check has started failing with
-        # "openpgp: key expired" — an expired key baked into our pinned
-        # terraform-plugin-testing v1.11.0, unrelated to this provider's
-        # code. Installing Terraform explicitly here means the library
-        # finds it on PATH first and never hits that code path.
+        # download's own GPG signature check failed with "openpgp: key
+        # expired" the first time this ran (see git history) — unrelated
+        # to this provider's code, an expired key baked into the hc-install
+        # version pulled in at the time. Installing Terraform explicitly
+        # here means the library finds it on PATH first and never hits
+        # that code path, regardless of whether a given hc-install/
+        # terraform-plugin-testing version has the issue.
       - run: go test ./... -run TestAcc -v
         env:
           TF_ACC: "1"
@@ -57,7 +59,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.22"
+          go-version: "1.25"
           cache: true
       - uses: hashicorp/setup-terraform@v4
         with:
@@ -65,12 +67,11 @@ jobs:
         # tfplugindocs shells out to Terraform to export the provider
         # schema — same hc-install expired-key issue as the acceptance
         # job (see its comment above) if it has to download its own copy.
-      - run: go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.19.4
-        # Pinned, not @latest: v0.20.1+ requires go >= 1.22.7 and v0.25.0
-        # (current latest) requires go >= 1.25.8 — this repo is on go 1.22
-        # (see the open Go-version question in docs/plans/paddle-provider-v1.md).
-        # v0.19.4 is the newest version confirmed to install cleanly under
-        # go 1.22.6 in this environment.
+      - run: go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@latest
+        # @latest is fine as of the go 1.25 bump — the go-version ceiling
+        # that forced pinning this (and terraform-plugin-testing/
+        # terraform-plugin-framework-validators) to older releases while
+        # this repo was on go 1.22 no longer applies.
       - run: tfplugindocs generate
       - run: git diff --exit-code -- docs/
         # docs/guardrails/docs-must-be-regenerated-before-merge.md: fail if

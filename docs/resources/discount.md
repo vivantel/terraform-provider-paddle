@@ -58,6 +58,8 @@ resource "paddle_discount" "launch_promo" {
 
 Import is supported using the following syntax:
 
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
 ```shell
 # Import using the Paddle discount ID.
 terraform import paddle_discount.launch_promo dsc_01h8xd4x1r5jz1y9xzq1dqk6mt

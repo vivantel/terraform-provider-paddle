@@ -43,6 +43,8 @@ resource "paddle_product" "example" {
 
 Import is supported using the following syntax:
 
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
 ```shell
 # Import using the Paddle product ID.
 terraform import paddle_product.example pro_01h8xce4qsr1a4b5xc0e6q3wr3

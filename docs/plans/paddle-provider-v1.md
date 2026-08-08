@@ -32,21 +32,38 @@ carry the *why*, this file carries the *what/how*, in order.
 
 ## Ground truth before you start
 
-- Go 1.22, HashiCorp Terraform Plugin Framework (not SDKv2).
+Updated 2026-08-08, end of this plan's Step 7 — this section described a
+much earlier state when first written (Go 1.22, no retry logic, no GPG
+key, catalog-only product/price) and would actively mislead a fresh
+session if left as-is; a stale "ground truth" is worse than none. Current
+state:
+
+- Go 1.25 (bumped from 1.22 this session — see "Open question: bump the
+  go version?" below, now resolved), HashiCorp Terraform Plugin Framework
+  (not SDKv2).
 - Module: `github.com/vivantel/terraform-provider-paddle`.
-- Existing: `internal/provider/provider.go`, `internal/provider/product_resource.go`
-  (`paddle_product`), `internal/provider/price_resource.go` (`paddle_price`),
-  `internal/client/client.go` (Products + Prices endpoints only, Bearer auth,
-  no retry logic yet).
-- A Paddle sandbox account/API key already exists (user-provided, not stored
-  in this repo — expect it via `PADDLE_API_KEY` env var locally, and as a
-  GitHub Actions secret of the same name in CI).
-- A GPG signing key for release artifacts does **not** exist yet and must be
-  created (Step 0 below).
-- `go` was not available in the shell used to write this plan — verify
-  `go version` works before running any Go commands below; if it's missing,
-  that's an environment problem to solve first, not part of this plan's
-  scope.
+- All three v1 catalog resources exist and are sandbox-confirmed:
+  `paddle_product`, `paddle_price`, `paddle_discount`, each with a
+  matching data source. `internal/client/client.go` has full CRUD +
+  archive for all three, plus retry/backoff (Step 1).
+- A Paddle sandbox account/API key already exists (user-provided, not
+  stored in this repo — expect it via `PADDLE_API_KEY` env var locally,
+  and as a GitHub Actions secret of the same name in CI, already set).
+- A GPG signing key for release artifacts exists, uploaded to the
+  Registry, GitHub secrets set (Step 0 — see its own status block for the
+  one still-open item: confirming the Registry "Publish a provider" flow
+  succeeded).
+- `go` is not on `PATH` by default in a fresh shell in this environment —
+  verify `go version` works before running Go commands; if missing, a
+  toolchain was downloaded to `/tmp/goroot`+`/tmp/goroot125` (both 1.22.6
+  and 1.25.12) during this session and may or may not still be present in
+  a new session's `/tmp`. A Terraform CLI binary was also downloaded to
+  `/tmp/tfbin` for the same reason (`hc-install`'s bundled signing key has
+  intermittently been expired — see the `acceptance`/`docs` CI job
+  comments in `ci.yaml`) and may need re-fetching too.
+- Docs (`docs/index.md`, `docs/resources/*.md`, `docs/data-sources/*.md`)
+  are generated via `tfplugindocs` from `examples/` + schema (Step 7) —
+  regenerate after any schema change, don't hand-edit.
 
 ## How to update this file as you work
 
@@ -498,19 +515,39 @@ Implements: [[0004-versioning-v0.1.0-and-changelog]],
 
 ---
 
-## Open question: bump the `go` version?
+## Resolved: bumped `go` to 1.25 (2026-08-08)
 
-Not decided — flagging so it doesn't get silently resolved either way.
-`go.mod` is pinned at `go 1.22.0` (matching [[0001-existing-provider-baseline]]
-and `ci.yaml`'s `go-version: "1.22"`). While wiring up Step 5's acceptance
-tests, `terraform-plugin-testing@latest` (`v1.16.0`) turned out to require
-`go >= 1.25.8` — had to pin `v1.11.0` instead, the newest version still
-compatible with `go 1.22`. The same kind of ceiling will likely recur for
-other dependencies over time. Bumping `go.mod`'s `go` line and `ci.yaml`'s
-`go-version` to something newer (1.23+) would remove this ceiling, but is a
-real decision (raises the minimum Go version anyone building this provider
-from source needs) rather than a mechanical fix — resolve it explicitly,
-don't let it happen as a side effect of chasing one dependency version.
+Was flagged as an open question after Step 5 needed to pin
+`terraform-plugin-testing` at `v1.11.0` (`go.mod` was `go 1.22.0` at the
+time; `terraform-plugin-testing@latest` needed `go >= 1.25.8`). User chose
+**1.25**, not the bleeding-edge latest (`go1.26.5` as of this decision,
+confirmed via `go.dev/dl`) — Go supports the last two majors, so 1.25 is
+inside the support window and removes the dependency ceiling without
+chasing a release that's one day old.
+
+`go.mod`'s `go`/`toolchain` lines and every `go-version` in
+`ci.yaml`/`release.yaml` bumped to `1.25`/`1.25.12`. Every previously
+version-ceiling-pinned dependency bumped to true latest as a result:
+`terraform-plugin-testing` `v1.11.0` → `v1.16.0`,
+`terraform-plugin-framework-validators` `v0.16.0` → `v0.19.0`,
+`tfplugindocs` `v0.19.4` → latest (`v0.25.0`, used via `@latest` in
+`ci.yaml` now rather than a pin). One real snag along the way:
+`terraform-plugin-framework` also needed an explicit bump (`v1.13.0` →
+`v1.19.0`, not just whatever `go mod tidy` picked automatically) —
+`terraform-plugin-testing@v1.16.0` pulls `terraform-plugin-go@v0.31.0`,
+which added a `GenerateResourceConfig` method to the provider-server
+interface that `terraform-plugin-framework@v1.16.1` (what `go mod tidy`
+landed on initially) doesn't implement, so the build failed with a missing-
+method error until `terraform-plugin-framework` was bumped to a version
+that does implement it. Worth remembering for any future Go-version-driven
+dependency bump: `go mod tidy` doesn't guarantee every transitively-pulled
+package stays mutually compatible, verify with a real `go build` after.
+
+Verified locally (go1.25.12 downloaded to `/tmp/goroot125` for this
+session): `go build ./...`, `go vet ./...`, `gofmt -l .`,
+`go test ./...` all clean, `tfplugindocs generate` idempotent (one cosmetic
+formatting diff from the tool version bump itself, no content change).
+Not yet confirmed in CI — that's the next push.
 
 ---
 
