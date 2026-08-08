@@ -29,6 +29,16 @@ jobs:
         with:
           go-version: "1.22"
           cache: true
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+        # terraform-plugin-testing (via hc-install) auto-downloads a
+        # Terraform CLI binary if it can't find one on PATH, and that
+        # download's own GPG signature check has started failing with
+        # "openpgp: key expired" — an expired key baked into our pinned
+        # terraform-plugin-testing v1.11.0, unrelated to this provider's
+        # code. Installing Terraform explicitly here means the library
+        # finds it on PATH first and never hits that code path.
       - run: go test ./... -run TestAcc -v
         env:
           TF_ACC: "1"
