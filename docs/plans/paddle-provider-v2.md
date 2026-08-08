@@ -143,10 +143,23 @@ Implements: [[0008-custom-data-and-enum-validator-retrofit]].
 
 ## Step 2: `tflog` debug logging
 
-Status: not started
-
-Implements: [[0009-tflog-observability-and-acceptance-test-sweepers]],
-`docs/guardrails/log-client-requests-with-tflog.md`.
+Status: done, confirmed green against the real sandbox — 2026-08-08.
+`tflog.Debug` added at the three points in `internal/client/client.go`'s
+`do()` described below; `do()` is the single chokepoint every resource/
+data-source CRUD method already funnels through, so no resource-level
+`tflog` calls were needed on top — "start with just `do()`, expand only if
+a real debugging session shows a gap" concluded there was no gap.
+Verified by temporarily setting `TF_LOG: debug` on the CI acceptance job
+(push+PR run, `31283961659`): all 9 acceptance tests passed, and the log
+output contained 72 `"paddle: sending request"` / 72 `"paddle: received
+response"` line pairs (method/path/attempt/status only, one pair per
+resource-and-data-source-mediated real HTTP call), with the sandbox API
+key and every request/response body absent from the log throughout
+(checked explicitly via `grep -i authorization`/`grep -i bearer` — the
+only "authorization" hits were GitHub Actions' own already-masked
+checkout credentials, unrelated to this provider). The `TF_LOG: debug`
+CI change was then reverted (it's not meant to run at debug verbosity on
+every push) — that revert is `acd6656`.
 
 1. Add `tflog.Debug` calls in `internal/client/client.go`'s `do()`:
    method, path, attempt number, response status. Never log

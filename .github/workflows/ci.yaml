@@ -45,14 +45,6 @@ jobs:
         env:
           TF_ACC: "1"
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
-          TF_LOG: "debug"
-        # TF_LOG=debug here is a one-time verification pass for
-        # docs/plans/paddle-provider-v2.md Step 2 (tflog logging) — confirms
-        # the "paddle: sending request"/"paddle: received response" lines
-        # from internal/client/client.go's do() actually surface through
-        # terraform-plugin-testing's logging setup, and that no API key or
-        # request/response body ever appears in them. Removed again once
-        # confirmed; not meant to run at debug verbosity on every push.
         # docs/decisions/0003-acceptance-tests-against-live-sandbox.md:
         # every TestAcc* test's testAccPreCheck skips (not fails) when
         # PADDLE_API_KEY is unset. GitHub doesn't inject repo secrets into
