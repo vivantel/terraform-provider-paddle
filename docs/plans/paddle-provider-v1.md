@@ -270,19 +270,28 @@ Files: `internal/provider/discount_resource.go`,
 
 ## Step 3: Retrofit `paddle_product` / `paddle_price`
 
-Status: done — 2026-08-08. ImportState (#1) already present (predates this
-plan). Data sources (#2, #3) added:
+Status: done, confirmed green against the real sandbox — 2026-08-08 (CI run
+31278945117; all 6 acceptance tests pass —
+`TestAccPaddle{Product,Price,Discount}_basic` and their
+`*DataSource_basic` counterparts). ImportState (#1) already present
+(predates this plan). Data sources (#2, #3) added:
 `internal/provider/product_data_source.go` / `price_data_source.go`, both
-reusing the resource's own model type (`ProductResourceModel`/
-`PriceResourceModel`) since the attribute sets match exactly — same
-approach already used for `paddle_discount`'s data source. Registered in
-`provider.go`. This also exercises the `GetPrice` question from the note
-below in practice: the price data source does a bare-ID `GetPrice` lookup,
-same as `ImportStatePassthroughID` already confirmed working — not yet
-re-confirmed against the sandbox for the data source specifically, that's
-the next CI push. Added acceptance test coverage for all three data
-sources (`TestAccPaddle{Product,Price,Discount}DataSource_basic`) — the
-discount data source existed since Step 2 but had no test until now.
+reusing the resource's own model type since the attribute sets match
+exactly — same approach as `paddle_discount`'s data source. Registered in
+`provider.go`.
+
+Found a 3rd occurrence of the same bug class as Step 5's price import
+crash — a real sandbox catch, not a local one — see commit `f4f910c`:
+`price_data_source.go`'s `Read()` did a full `req.Config.Get` into
+`PriceResourceModel`, but `unit_price` is Computed-only (not user-supplied)
+in a data source, so it's null in config at `Read()` time — same "null
+into non-pointer nested struct" crash as the resource's post-import
+`Read()`. Fixed with the same `GetAttribute(id)`-only pattern, and
+retrofitted `product_data_source.go`/`discount_data_source.go` with it too
+even though neither is actually broken today (no nested struct field in
+either) — being correct by construction beats being correct by accident of
+current field types, and this is now the 3rd time this exact bug has
+appeared.
 Local build/vet/gofmt/unit tests all clean; all three new acceptance tests
 skip cleanly with no `PADDLE_API_KEY` set, not yet run against the real
 sandbox.
