@@ -64,7 +64,10 @@ Commits + `Refs:` trailers to the relevant `docs/decisions/`,
 
 ## Step 0: Manual prerequisites (not automatable by an agent)
 
-Status: not started
+Status: in progress — GPG key generated + uploaded, all three secrets set;
+Registry "Publish a provider" flow was blocked on the repo being empty
+(fixed 2026-08-08 — master/feature/v1 pushed, master set as default), retry
+pending confirmation.
 
 These need a human with access to GitHub org settings, a terminal for GPG,
 and the Terraform Registry UI. List them explicitly so a fresh session
@@ -89,10 +92,15 @@ doesn't waste time trying to script around them.
     `vivantel` GitHub account → **User Settings → Signing Keys**
     (`https://registry.terraform.io/settings/gpg-keys`) → **+ New GPG Key**
     → paste `gpg --armor --export <key-id>` output.
-- [ ] Store the existing sandbox API key as the GitHub Actions secret
+  - [x] Done 2026-08-08. Key `56707089C4BE8B1A` (fingerprint
+        `7108EA4B99998192A7530A9956707089C4BE8B1A`), RSA 3072, confirmed live
+        via `registry.terraform.io/v2/gpg-keys?filter[namespace]=vivantel`.
+- [x] Store the existing sandbox API key as the GitHub Actions secret
       `PADDLE_API_KEY` on the same repo (see
       [[0002-paddle-sandbox-account-available]] — the key itself already
-      exists, this is just wiring it into CI).
+      exists, this is just wiring it into CI). Done 2026-08-08, confirmed via
+      `gh secret list` — `GPG_PRIVATE_KEY`, `PASSPHRASE`, `PADDLE_API_KEY` all
+      present on `vivantel/terraform-provider-paddle`.
 - [ ] Register `vivantel/terraform-provider-paddle` with the Terraform
       Registry's "Publish a provider" flow (registry.terraform.io → Publish
       → Provider → connect the GitHub App). Do this after the GPG public key
@@ -101,6 +109,12 @@ doesn't waste time trying to script around them.
       Registry actually ingest releases once GoReleaser starts producing
       them — without it, GitHub Releases will exist but never show up on the
       Registry.
+  - First attempt got HTTP 400 — root cause was the GitHub repo being
+    completely empty (`defaultBranchRef` blank, nothing ever pushed).
+    Fixed 2026-08-08: `master` (empty orphan root) and `feature/v1` (all
+    work) both pushed to `origin`, `master` set as GitHub's default branch.
+    CI is green on `feature/v1` as of commit `4a0a77f`. Retry the publish
+    flow now that the repo has real content — not yet confirmed successful.
 
 Nothing in Steps 1+ below is blocked on this step being done first — the
 code/CI work can proceed in parallel — but no tagged release will actually
@@ -191,19 +205,23 @@ Files: `internal/provider/discount_resource.go`,
 
 ## Step 3: Retrofit `paddle_product` / `paddle_price`
 
-Status: not started
+Status: partially done — ImportState (#1) already present in both resources
+(verified 2026-08-08, predates this plan); data sources (#2, #3) still
+missing — `ls internal/provider/` has no `*_data_source.go` files at all.
 
 Implements: `docs/guardrails/catalog-resources-need-data-source.md`,
 `docs/guardrails/resources-need-import-support.md`.
 
-The two existing resources predate these guardrails and don't yet meet them.
+The two existing resources predate these guardrails; the import-support one
+is already met, the data-source one isn't yet.
 
-1. Add `ImportState` (via `resource.ImportStatePassthroughID`) to both
-   `product_resource.go` and `price_resource.go`. Note: a Price's ID alone
-   may not be enough context depending on how Paddle scopes price lookups —
-   check whether `GetPrice` needs a product ID too; if so, design the import
-   ID format accordingly (e.g. `<price_id>` if Paddle's price lookup is
-   global, or document a composite import ID if not).
+1. ~~Add `ImportState` (via `resource.ImportStatePassthroughID`) to both
+   `product_resource.go` and `price_resource.go`.~~ Already done — both
+   resources call `resource.ImportStatePassthroughID(ctx, path.Root("id"),
+   req, resp)`. Double-check Price's import-by-ID-alone assumption still
+   holds once you're working with real sandbox data (Step 5) — a Price's ID
+   may or may not be enough context depending on how Paddle scopes price
+   lookups; check whether `GetPrice` needs a product ID too.
 2. Add `internal/provider/product_data_source.go` and
    `internal/provider/price_data_source.go`, same pattern as Step 2's
    discount data source.
@@ -211,7 +229,14 @@ The two existing resources predate these guardrails and don't yet meet them.
 
 ## Step 4: Provider-level auth schema
 
-Status: not started
+Status: done — verified 2026-08-08. `internal/provider/provider.go` already
+implements `api_key`/`environment` (Optional, `api_key` Sensitive) with
+`PADDLE_API_KEY`/`PADDLE_ENVIRONMENT` env fallback, matching
+[[0002-provider-auth-schema-with-env-fallback]] — plus one improvement
+beyond what that decision specified: defaults to `sandbox`, not
+`production`, if `environment` is unset anywhere, so a misconfigured
+provider block fails safe toward the environment that can't charge real
+cards. This predates this plan; no action needed.
 
 Implements: [[0002-provider-auth-schema-with-env-fallback]].
 

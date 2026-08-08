@@ -11,11 +11,15 @@ The provider configuration block gets two optional attributes:
 
 - `api_key` (string, optional, sensitive)
 - `environment` (string, optional — `"sandbox"` or `"production"`, default
-  `"production"`)
+  `"sandbox"`)
 
 If `api_key` is unset in the provider block, the provider falls back to the
 `PADDLE_API_KEY` environment variable. If `environment` is unset, it falls
-back to `PADDLE_ENVIRONMENT`, defaulting to `"production"` if neither is set.
+back to `PADDLE_ENVIRONMENT`, defaulting to `"sandbox"` if neither is set —
+revised from this decision's original `"production"` default once
+implemented: defaulting toward the environment that can't charge real cards
+means a misconfigured or incomplete provider block fails safe, not
+expensive.
 
 ```hcl
 provider "paddle" {
