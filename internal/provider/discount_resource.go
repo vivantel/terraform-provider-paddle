@@ -85,8 +85,14 @@ func (r *DiscountResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				MarkdownDescription: "\"0.01\"-\"100\" for `percentage`; lowest currency denomination for `flat`/`flat_per_seat` (e.g. \"1000\" = $10.00 for a 2-decimal currency).",
 			},
 			"code": schema.StringAttribute{
-				Optional:            true,
-				MarkdownDescription: "1-32 alphanumeric characters, case-insensitive. Omit for a discount only usable by ID (e.g. applied programmatically), not by customer-entered code.",
+				Optional: true,
+				Computed: true,
+				MarkdownDescription: "1-32 alphanumeric characters, case-insensitive. Optional+Computed, not " +
+					"purely user-set: confirmed against the real sandbox that Paddle auto-generates a code " +
+					"when this is omitted (e.g. \"3268E6WW3W\") rather than leaving it null, so modeling this " +
+					"as Optional-only produced \"Provider produced inconsistent result after apply\" on the " +
+					"very first real Create.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"enabled_for_checkout": schema.BoolAttribute{
 				Optional:            true,
