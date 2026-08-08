@@ -94,9 +94,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 // ── Products — https://developer.paddle.com/api-reference/products ─────────
 
 type Product struct {
-	ID          string  `json:"id,omitempty"`
-	Name        string  `json:"name"`
-	TaxCategory string  `json:"tax_category"`
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name"`
+	TaxCategory string `json:"tax_category"`
 	// Description and ImageURL deliberately lack `omitempty`: a nil pointer
 	// must marshal as an explicit JSON null so PATCH can clear a
 	// previously-set value, rather than omitting the field (which Paddle
