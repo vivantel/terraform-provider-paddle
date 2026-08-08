@@ -63,6 +63,14 @@ func init() {
 		Dependencies: []string{"paddle_price"},
 		F:            sweepProducts,
 	})
+	resource.AddTestSweepers("paddle_discount_group", &resource.Sweeper{
+		Name: "paddle_discount_group",
+		// Discounts may reference a discount_group_id — sweep discounts
+		// first for the same reason paddle_product sweeps paddle_price
+		// first above.
+		Dependencies: []string{"paddle_discount"},
+		F:            sweepDiscountGroups,
+	})
 }
 
 func sweepProducts(_ string) error {
@@ -162,6 +170,28 @@ func sweepDiscounts(_ string) error {
 		}
 		if err := c.ArchiveDiscount(ctx, d.ID); err != nil && !client.IsNotFound(err) {
 			log.Printf("[WARN] failed to archive leaked test discount %s (%s): %s", d.ID, d.Description, err)
+		}
+	}
+	return nil
+}
+
+func sweepDiscountGroups(_ string) error {
+	c := sweepClient()
+	if c == nil {
+		log.Printf("[WARN] paddle_discount_group sweeper: PADDLE_API_KEY not set, skipping")
+		return nil
+	}
+	ctx := context.Background()
+	groups, err := c.ListDiscountGroups(ctx)
+	if err != nil {
+		return err
+	}
+	for _, g := range groups {
+		if g.Status == "archived" || !isAccTestName(g.Name) {
+			continue
+		}
+		if err := c.ArchiveDiscountGroup(ctx, g.ID); err != nil && !client.IsNotFound(err) {
+			log.Printf("[WARN] failed to archive leaked test discount group %s (%s): %s", g.ID, g.Name, err)
 		}
 	}
 	return nil

@@ -1,7 +1,7 @@
 // Package client is a minimal HTTP client for the Paddle Billing API
 // (https://developer.paddle.com/api-reference/overview). It only implements
-// the Products, Prices, and Discounts endpoints this provider currently
-// needs.
+// the Products, Prices, Discounts, and Discount Groups endpoints this
+// provider currently needs.
 package client
 
 import (
@@ -575,6 +575,72 @@ func (c *Client) ListDiscounts(ctx context.Context) ([]Discount, error) {
 	for {
 		var env discountListEnvelope
 		if err := c.do(ctx, http.MethodGet, listPath("/discounts", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
+// ── Discount Groups — https://developer.paddle.com/api-reference/discount-groups ─
+
+type DiscountGroup struct {
+	ID     string `json:"id,omitempty"`
+	Name   string `json:"name"`
+	Status string `json:"status,omitempty"`
+}
+
+type discountGroupEnvelope struct {
+	Data DiscountGroup `json:"data"`
+}
+
+func (c *Client) CreateDiscountGroup(ctx context.Context, g DiscountGroup) (*DiscountGroup, error) {
+	var env discountGroupEnvelope
+	if err := c.do(ctx, http.MethodPost, "/discount-groups", g, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) GetDiscountGroup(ctx context.Context, id string) (*DiscountGroup, error) {
+	var env discountGroupEnvelope
+	if err := c.do(ctx, http.MethodGet, "/discount-groups/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) UpdateDiscountGroup(ctx context.Context, id string, g DiscountGroup) (*DiscountGroup, error) {
+	var env discountGroupEnvelope
+	if err := c.do(ctx, http.MethodPatch, "/discount-groups/"+id, g, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// Same story as Product/Price/Discount — no separate delete operation,
+// archiving via update is the only removal path (confirmed against the
+// real API reference, docs/decisions/0007).
+func (c *Client) ArchiveDiscountGroup(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodPatch, "/discount-groups/"+id, statusPatch{Status: "archived"}, nil)
+}
+
+type discountGroupListEnvelope struct {
+	Data []DiscountGroup `json:"data"`
+	Meta paginationMeta  `json:"meta"`
+}
+
+// ListDiscountGroups — see ListProducts' comment; same pagination shape,
+// same sweeper-only purpose.
+func (c *Client) ListDiscountGroups(ctx context.Context) ([]DiscountGroup, error) {
+	var all []DiscountGroup
+	after := ""
+	for {
+		var env discountGroupListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/discount-groups", after), nil, &env); err != nil {
 			return nil, err
 		}
 		all = append(all, env.Data...)

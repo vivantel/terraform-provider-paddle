@@ -195,3 +195,17 @@ func assertJSONEqual(t *testing.T, got []byte, want string) {
 		t.Errorf("JSON mismatch:\n got:  %s\n want: %s", got, want)
 	}
 }
+
+func TestDiscountGroupJSON_OnlyNameAndStatus(t *testing.T) {
+	// Discount Groups' create/update body is genuinely just these two
+	// fields (docs/decisions/0007) — this test exists to catch a future
+	// accidental field addition to the wire struct that Paddle's API
+	// doesn't accept, the same class of bug statusPatch was introduced to
+	// prevent for archive bodies.
+	g := DiscountGroup{Name: "VIP Customers"}
+	b, err := json.Marshal(g)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{"name":"VIP Customers"}`)
+}

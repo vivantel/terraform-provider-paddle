@@ -214,7 +214,30 @@ Implements: [[0009-tflog-observability-and-acceptance-test-sweepers]].
 
 ## Step 4: `paddle_discount_group` resource + data source
 
-Status: not started
+Status: implemented, pending real-sandbox CI confirmation (pushed
+2026-08-08, awaiting run result — update this line once confirmed).
+`internal/client/client.go` gained `DiscountGroup` (just `Name`/`Status`,
+confirmed against decision 0007's field list — no `custom_data`, Paddle's
+API genuinely doesn't have it for this entity, checked rather than
+assumed), `Create/Get/Update/ArchiveDiscountGroup`, and
+`ListDiscountGroups` (for the sweeper). `discount_group_resource.go` +
+`discount_group_data_source.go` modeled closely on `discount_resource.go`/
+`discount_data_source.go` given the schema is close to the smallest
+possible (name + status), including the same `GetAttribute(id)`-only
+`Read()` pattern even though this model has no nested struct field to
+protect against yet. Registered in `provider.go`, added to
+`sweep_test.go` (declares `paddle_discount` as a sweeper `Dependencies`
+entry, mirroring `paddle_product` → `paddle_price`). Unit tests for
+`toAPIDiscountGroup`/`fromAPIDiscountGroup`, acceptance tests
+(`TestAccPaddleDiscountGroup_basic`, `TestAccPaddleDiscountGroupDataSource_basic`)
+covering create/update/no-op-plan/import/data-source lookup. Did not add
+a plan-time reference-validity check on `paddle_discount`'s
+`discount_group_id` (Step 4 item 6's "default to relying on Paddle's own
+API error unless it's a two-line change" — it isn't a two-line change).
+Docs regenerated (new `examples/{resources,data-sources}/paddle_discount_group/`
+added, matching the existing per-resource example convention;
+`provider.go`'s top-level `Description` updated to mention discount
+groups).
 
 Implements: [[0007-v2-scope-discount-groups-and-notification-settings]],
 every guardrail in `docs/guardrails/` (data source, import, custom_data,
