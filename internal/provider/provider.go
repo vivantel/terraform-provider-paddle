@@ -40,7 +40,7 @@ func (p *PaddleProvider) Metadata(_ context.Context, _ provider.MetadataRequest,
 
 func (p *PaddleProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages Paddle Billing resources (products, prices). Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
+		Description: "Manages Paddle Billing catalog resources (products, prices, discounts). Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
 				MarkdownDescription: "Paddle API key. Can also be set via the `PADDLE_API_KEY` environment variable.",

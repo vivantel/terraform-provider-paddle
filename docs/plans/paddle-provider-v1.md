@@ -389,11 +389,17 @@ question, not yet decided — see the note at the end of this plan.
 
 ## Step 6: CI workflows
 
-Status: `ci.yaml`'s `acceptance` job done 2026-08-08 (see above); `docs` job
-and `.github/workflows/release.yml` still not started.
-`.goreleaser.yml`/`terraform-registry-manifest.json` already existed,
-predating this plan — not yet verified against the current template
-(#5 below still applies as a check, not a from-scratch build).
+Status: done — 2026-08-08. `docs` job added to `ci.yaml`: installs
+Terraform CLI (same `hc-install` expired-key workaround as the
+`acceptance` job) + `tfplugindocs@v0.19.4` (pinned — `@latest` needs
+`go >= 1.25.8`, `v0.20.1+` needs `go >= 1.22.7`, this repo is on exactly
+`go 1.22`; `v0.19.4` is the newest confirmed to install under `1.22.6`),
+runs `tfplugindocs generate`, then `git diff --exit-code -- docs/`.
+`release.yaml`/`.goreleaser.yml`/`terraform-registry-manifest.json`
+(all predate this plan) read and verified, not changed — see #4/#5
+below, both confirmed correct against the current
+`hashicorp/terraform-provider-scaffolding-framework` template rather than
+just assumed.
 
 Implements: `docs/guardrails/docs-must-be-regenerated-before-merge.md`,
 `docs/guardrails/acceptance-tests-require-tf-acc-gate.md`,
@@ -410,51 +416,66 @@ File: `.github/workflows/ci.yaml` (exists)
    from forked-PR runs, and every `TestAcc*` test's `testAccPreCheck` skips
    (not fails) when `PADDLE_API_KEY` is empty, so a fork PR run just
    reports everything skipped.
-3. **Still needed:** `docs` job — run `tfplugindocs generate`, then
-   `git diff --exit-code` — fail if generation produced any diff against
-   committed `docs/index.md` / `docs/resources/*.md` /
-   `docs/data-sources/*.md`. Depends on Step 7.
+3. ~~`docs` job~~ Done — see above.
 
-File: `.github/workflows/release.yaml` (exists, but only has the
-`goreleaser` job from before this plan — not yet verified end-to-end)
+File: `.github/workflows/release.yaml` (exists, predates this plan)
 
-4. **Still needed:** confirm it's triggered correctly on tag push matching
-   `v*`, imports `GPG_PRIVATE_KEY` + `PASSPHRASE` secrets (see Step 0, now
-   done), runs `goreleaser release --clean`. Read the existing file before
-   assuming it needs changes — it may already be correct.
+4. ~~Confirm it's triggered correctly on tag push matching `v*`, imports
+   `GPG_PRIVATE_KEY` + `PASSPHRASE` secrets, runs `goreleaser release
+   --clean`.~~ Read and confirmed correct as-is: triggers on `push: tags:
+   ["v*"]`, `crazy-max/ghaction-import-gpg` + `goreleaser/goreleaser-action`
+   both already pinned to `v7` (from the earlier "up-to-date GH Actions"
+   pass this session), `GPG_FINGERPRINT`/`GITHUB_TOKEN` wired correctly. No
+   changes needed.
 
 File: `.goreleaser.yml` (exists, predates this plan)
 
-5. **Still needed:** verify its target matrix
-   (`darwin/linux/windows` × `amd64/arm64`), signing config, and
+5. ~~Verify its target matrix, signing config, and
    `terraform-registry-manifest.json` generation against the current
-   `hashicorp/terraform-provider-scaffolding-framework` template — it was
-   never confirmed against that template, just found already present.
+   template.~~ Read and confirmed: `version: 2` GoReleaser config,
+   `goos: [freebsd, windows, linux, darwin]` × `goarch: [amd64, "386",
+   arm, arm64]` (darwin/386 excluded, correct — Apple never shipped 32-bit
+   Intel), `checksum`/`signs`/`release.extra_files` all reference
+   `terraform-registry-manifest.json` correctly, `formats: [zip]` syntax
+   matches GoReleaser v2. Matches the current
+   `hashicorp/terraform-provider-scaffolding-framework` template. No
+   changes needed.
 
 File: `terraform-registry-manifest.json` (exists, predates this plan) —
 required by the Registry to know which protocol versions this provider
-supports (Plugin Framework providers use protocol version 6). Sanity-check
-its `protocol_versions` value once you're looking at this step.
+supports. Confirmed: `"protocol_versions": ["6.0"]`, correct for a Plugin
+Framework provider. No changes needed.
 
 ## Step 7: Docs
 
-Status: not started
+Status: done — 2026-08-08.
 
 Implements: [[0003-docs-via-tfplugindocs]].
 
-1. `go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@latest`
-   (or add as a tool dependency per Go 1.22 tool-dependency conventions).
-2. Add `templates/` (if any resource needs example usage beyond what
-   `MarkdownDescription` on each schema attribute already documents) and
-   `examples/` directories per `tfplugindocs` convention
-   (`examples/resources/paddle_product/resource.tf`, etc. — these `.tf`
-   files get embedded into generated docs).
-3. Run `tfplugindocs generate`, commit the resulting `docs/index.md`,
-   `docs/resources/*.md`, `docs/data-sources/*.md`.
-4. Update `README.md`: replace the `dev_overrides`-only workflow description
-   with a note that the provider is now published to the Terraform Registry
-   as `vivantel/paddle` once Step 0 + a `v0.1.0` tag are done — keep the
-   `dev_overrides` section too, since it's still useful for local iteration.
+1. ~~Install `tfplugindocs`.~~ Installed at `v0.19.4` (pinned — see Step
+   6's note on the `go 1.22` ceiling), same tool used by the new `docs` CI
+   job.
+2. ~~Add `templates/`/`examples/`.~~ No `templates/` needed — `tfplugindocs`
+   generates from built-in defaults fine without one. Added `examples/`
+   for all 3 resources + 3 data sources + the provider block itself
+   (`examples/{provider,resources,data-sources}/...`), each a real,
+   runnable-shaped `.tf` snippet (plus `import.sh` per resource) — these
+   get embedded into the generated docs as "Example Usage" sections.
+3. ~~Run `tfplugindocs generate`, commit the result.~~ Done —
+   `docs/index.md`, `docs/resources/*.md`, `docs/data-sources/*.md`, all
+   7 pages. Confirmed idempotent (`tfplugindocs generate` a second time
+   produces no diff) before committing. Also fixed a staleness bug caught
+   along the way: `provider.go`'s schema `Description` still said
+   "products, prices" with no mention of discounts, added in Step 2 —
+   updated before generating so the Registry-facing docs don't ship a
+   stale description.
+4. ~~Update `README.md`.~~ Done: "Status" section rewritten (was still
+   "freshly scaffolded, not yet tested" — long stale given Steps 0-6's
+   sandbox confirmations), usage example extended to show
+   `paddle_discount` and a data source, "Development" section documents
+   `go test ./...` vs the `TF_ACC=1` acceptance run vs `tfplugindocs
+   generate`, "Publishing" section updated to check off what Step 0
+   actually completed rather than describing it as "not done yet".
 
 ## Step 8: First release
 

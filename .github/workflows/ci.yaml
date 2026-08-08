@@ -49,3 +49,34 @@ jobs:
         # `pull_request`-triggered runs for forked PRs, so this job just
         # reports everything skipped on those runs rather than failing or
         # leaking the sandbox key — no extra fork guard needed here.
+
+  docs:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.22"
+          cache: true
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+        # tfplugindocs shells out to Terraform to export the provider
+        # schema — same hc-install expired-key issue as the acceptance
+        # job (see its comment above) if it has to download its own copy.
+      - run: go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@v0.19.4
+        # Pinned, not @latest: v0.20.1+ requires go >= 1.22.7 and v0.25.0
+        # (current latest) requires go >= 1.25.8 — this repo is on go 1.22
+        # (see the open Go-version question in docs/plans/paddle-provider-v1.md).
+        # v0.19.4 is the newest version confirmed to install cleanly under
+        # go 1.22.6 in this environment.
+      - run: tfplugindocs generate
+      - run: git diff --exit-code -- docs/
+        # docs/guardrails/docs-must-be-regenerated-before-merge.md: fail if
+        # generation produced any diff against what's committed, so the
+        # Registry-facing docs/ (index.md, resources/*.md,
+        # data-sources/*.md — distinct from this repo's own
+        # docs/{facts,decisions,guardrails,skills,plans}/ knowledge
+        # artifacts, which this job never touches) can't silently drift
+        # from the actual schema.
