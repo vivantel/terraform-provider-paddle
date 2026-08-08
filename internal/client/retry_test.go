@@ -162,30 +162,37 @@ func TestDo_DoesNotRetryOtherClientErrors(t *testing.T) {
 	}
 }
 
-func TestDo_RespectsContextCancellationDuringBackoff(t *testing.T) {
-	// Deliberately not using withFastRetries: needs a real (if short)
-	// backoff window to cancel partway through.
+func TestWaitBeforeRetry_RespectsContextCancellation(t *testing.T) {
+	// Tests waitBeforeRetry directly rather than through a full do() retry
+	// loop over real HTTP round trips. An earlier version of this test
+	// (TestDo_RespectsContextCancellationDuringBackoff) drove this through
+	// GetProduct against an httptest server with a 20ms context timeout
+	// against a 200ms *jittered* backoff — backoffDelay's full jitter
+	// picks a random delay in [0, 200ms), so on a slower CI runner it
+	// could legitimately land under 20ms and let a second attempt through
+	// before the deadline fired, flaking the "exactly 1 call" assertion
+	// (seen in CI run 31273500236: calls=2, not 1). Fixed by testing the
+	// wait itself with a backoff far longer than the deadline, and an
+	// already-cancelled context, so the outcome doesn't depend on timing
+	// at all.
 	origBase, origMax := retryBaseBackoff, retryMaxBackoff
-	retryBaseBackoff = 200 * time.Millisecond
-	retryMaxBackoff = 200 * time.Millisecond
+	retryBaseBackoff = time.Second
+	retryMaxBackoff = time.Second
 	t.Cleanup(func() { retryBaseBackoff, retryMaxBackoff = origBase, origMax })
 
-	var calls int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&calls, 1)
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer srv.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled before waitBeforeRetry is even called
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
+	start := time.Now()
+	err := waitBeforeRetry(ctx, 1, "")
+	elapsed := time.Since(start)
 
-	c := New(srv.URL, "test-key")
-	_, err := c.GetProduct(ctx, "pro_1")
 	if err == nil {
-		t.Fatal("GetProduct: got nil error, want context deadline error")
+		t.Fatal("waitBeforeRetry: got nil error, want the context's cancellation error")
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
-		t.Errorf("calls = %d, want 1 — context should have been cancelled during the first backoff wait, before a second attempt", got)
+	// The backoff itself would sleep up to 1s; an already-cancelled
+	// context must short-circuit that near-instantly, not sleep through it.
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("waitBeforeRetry took %v with an already-cancelled context, want near-instant return", elapsed)
 	}
 }
