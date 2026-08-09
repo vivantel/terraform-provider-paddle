@@ -56,7 +56,7 @@ data "paddle_product" "existing" {
 }
 ```
 
-Full schema reference and more examples: [`docs/`](docs/index.md), or on the [Terraform Registry](https://registry.terraform.io/providers/vivantel/paddle/latest) once published (see below).
+Full schema reference and more examples: [`docs/`](docs/index.md), or on the [Terraform Registry](https://registry.terraform.io/providers/vivantel/paddle/latest) once published (see below). For how these resources actually fit together — not just isolated single-resource snippets — see [`examples/full-stack/main.tf`](examples/full-stack/main.tf): a product with a recurring price, a discount group capping usage across multiple discounts, a notification setting wired to billing events, and a checkout domain lookup, all referencing each other.
 
 ### Checkout domains
 
