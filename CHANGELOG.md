@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.2.0] - 2026-08-09
+
+### Added
+
+- `custom_data` on `paddle_product`/`paddle_price`/`paddle_discount` — was already reachable client-side but not exposed on any resource schema; modeled as JSON-encoded string with a semantic-equality plan modifier so key-reordering from Paddle's own re-serialization doesn't cause a perpetual diff.
+- `stringvalidator.OneOf` enum validation on `paddle_product`'s `tax_category`/`type` and `paddle_price`'s `tax_mode`, so a typo surfaces as a clear plan-time error instead of an opaque 400 from Paddle at apply time.
+- `tflog` debug logging in the API client's single request chokepoint (method/path/attempt/status only — request/response bodies and the API key are never logged).
+- Acceptance test sweepers for all five resources, backed by new cursor-paginated `List*` client methods, so sandbox objects orphaned by an interrupted test run can be cleaned up deliberately instead of accumulating.
+- `paddle_discount_group` resource and data source, closing a gap where `paddle_discount`'s `discount_group_id` referenced an entity type this provider couldn't manage at all.
+- `paddle_notification_setting` resource and data source — the first resource in this provider with a real hard `DELETE` instead of archive-via-update, a `RequiresReplace` attribute (`type`), and a confirmed request/response shape asymmetry on `subscribed_events` (array of strings in, array of event objects out).
+
+### Fixed
+
+- Discount group `name` acceptance tests now use a random suffix — Paddle enforces global uniqueness on the field, which broke when this repo's `push` and `pull_request` CI jobs ran the same fixed name concurrently against one shared sandbox account.
+- `paddle_notification_setting`'s `api_version` is now `Optional+Computed` instead of purely user-set — Paddle silently returns its own account default even when the field is omitted, which produced "Provider produced inconsistent result after apply" on the very first real `Create`.
+- A sweeper verification test's broad match could delete a *different* concurrently-running CI job's in-progress notification setting fixture (real hard `DELETE`, unlike the archive-based sweepers); sweeper mechanics were extracted into ID-scoped helpers so verification tests can no longer touch another job's fixtures while the real sweepers keep their intentionally broad match.
+
+### Changed
+
+- CI's acceptance job push-trigger branch updated from the now-merged `feature/v1` to `feature/v2`.
+
+### Documentation
+
+- `CONTRIBUTING.md` added — points at `README.md`'s existing dev-setup/publishing sections rather than duplicating them, and covers the `docs/{decisions,facts,guardrails,plans}/` knowledge-artifact convention plus the non-obvious per-resource patterns this provider has learned the hard way.
+- `README.md` updated to list all five resources and the archive-vs-real-delete distinction, not just v1's three.
+- `docs/plans/paddle-provider-v2.md` recorded a deferred follow-up: CI never validates that what actually lands on the Terraform Registry installs and works, since acceptance tests build the provider in-process from source rather than pulling it from `registry.terraform.io`.
+- Checkout Domains (stretch resource) and the Registry provider logo were explicitly deferred rather than silently dropped, each with a reason recorded in the v2 plan.
+
 ## [0.1.0] - 2026-08-08
 
 ### Added
