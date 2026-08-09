@@ -1,0 +1,90 @@
+name: Registry Smoke Test
+
+# Confirms what's actually live on the Terraform Registry installs and
+# works — not just that GoReleaser produced a GitHub Release. Nothing
+# else in this repo's CI does this: internal/provider's acceptance tests
+# build the provider in-process from source
+# (providerserver.NewProtocol6WithError), so a manifest problem, a
+# signature verification failure, or a missing platform binary in an
+# actual release wouldn't be caught by them. This runs `terraform init`
+# against the real Registry (no dev_overrides) and a real `apply`/
+# `destroy` against the sandbox, using the published binary end to end.
+#
+# Deliberately a separate workflow, not a job inside release.yaml: the
+# version has to already exist on the Registry before this can run
+# against it, and Registry ingestion isn't instant after a GitHub Release
+# is published (see release.yaml's own comment) — running immediately
+# after GoReleaser finishes would race the ingestion webhook.
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Provider version to test (e.g. 0.2.0, no leading v)"
+        required: true
+
+jobs:
+  smoke-test:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            # For a workflow triggered by `push: tags: [...]` (release.yaml's
+            # own trigger), head_branch on the *triggering* run is the tag
+            # name itself (e.g. "v0.2.0"), not a real branch — confirmed
+            # directly against this repo's own run history, not assumed.
+            tag="${{ github.event.workflow_run.head_branch }}"
+            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+        # Same expired hc-install signing-key workaround as ci.yaml's
+        # acceptance/docs jobs — see those jobs' comments for the full
+        # story. Installing Terraform explicitly here means this job never
+        # hits that code path either.
+      - name: Write scratch config
+        run: |
+          mkdir -p /tmp/registry-smoke-test
+          cat > /tmp/registry-smoke-test/main.tf <<EOF
+          terraform {
+            required_providers {
+              paddle = {
+                source  = "vivantel/paddle"
+                version = "${{ steps.version.outputs.version }}"
+              }
+            }
+          }
+
+          provider "paddle" {
+            environment = "sandbox"
+          }
+
+          resource "paddle_product" "smoke_test" {
+            name         = "Registry Smoke Test ${{ github.run_id }}"
+            tax_category = "standard"
+          }
+          EOF
+      - name: terraform init (pulls the real published binary from the Registry — no dev_overrides)
+        working-directory: /tmp/registry-smoke-test
+        run: terraform init
+      - name: terraform apply (real create against the sandbox, through the published binary)
+        working-directory: /tmp/registry-smoke-test
+        run: terraform apply -auto-approve
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+      - name: terraform destroy (cleanup)
+        if: always()
+        working-directory: /tmp/registry-smoke-test
+        run: terraform destroy -auto-approve
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}

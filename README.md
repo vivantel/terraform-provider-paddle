@@ -117,5 +117,6 @@ provider_installation {
 2. ✅ Two repo secrets: `GPG_PRIVATE_KEY` (armored private key) and `PASSPHRASE`.
 3. On registry.terraform.io, "Publish provider" → pick this repo. Do this *after* step 1's key is uploaded — the flow expects a matching signing key to already exist.
 4. Push a `v*` tag (e.g. `v0.1.0`) — `.github/workflows/release.yaml` runs GoReleaser, which builds, signs, and creates a GitHub Release with the required registry manifest. The Registry then ingests it via webhook (not instant — allow a few minutes).
+5. Once the Registry has ingested it, `.github/workflows/registry-smoke-test.yaml` runs automatically (triggered by `release.yaml`'s completion) and confirms the *published* version actually installs and works: a real `terraform init` against `registry.terraform.io` (no `dev_overrides`), then a real `apply`/`destroy` of a `paddle_product` against the sandbox through the published binary — not just the in-process acceptance tests CI already runs on every push. Can also be run manually (`workflow_dispatch`, pass a version) to re-check an existing release.
 
 Steps 1-3 need your own registry account — not something that can be done from CI. See `docs/plans/paddle-provider-v1.md` (Step 0/Step 8) for the full history of what's been done and what's still open.
