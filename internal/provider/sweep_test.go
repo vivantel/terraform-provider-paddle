@@ -1,8 +1,12 @@
 package provider
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -105,14 +109,22 @@ func sweepMatchingProducts(ctx context.Context, c *client.Client, match func(cli
 	if err != nil {
 		return err
 	}
+	var matched, swept int
 	for _, p := range products {
 		if !match(p) {
 			continue
 		}
+		matched++
 		if err := c.ArchiveProduct(ctx, p.ID); err != nil && !client.IsNotFound(err) {
 			log.Printf("[WARN] failed to archive leaked test product %s (%s): %s", p.ID, p.Name, err)
+			continue
 		}
+		swept++
 	}
+	// A count on every run, not just on failure — a clean run with zero
+	// [WARN] lines previously only proved nothing it tried to sweep
+	// failed, not whether it found (and swept) anything at all.
+	log.Printf("[INFO] paddle_product sweeper: matched %d, swept %d", matched, swept)
 	return nil
 }
 
@@ -127,14 +139,19 @@ func sweepPrices(_ string) error {
 	if err != nil {
 		return err
 	}
+	var matched, swept int
 	for _, p := range prices {
 		if p.Status == "archived" || !isAccTestName(p.Description) {
 			continue
 		}
+		matched++
 		if err := c.ArchivePrice(ctx, p.ID); err != nil && !client.IsNotFound(err) {
 			log.Printf("[WARN] failed to archive leaked test price %s (%s): %s", p.ID, p.Description, err)
+			continue
 		}
+		swept++
 	}
+	log.Printf("[INFO] paddle_price sweeper: matched %d, swept %d", matched, swept)
 	return nil
 }
 
@@ -189,14 +206,19 @@ func sweepDiscounts(_ string) error {
 	if err != nil {
 		return err
 	}
+	var matched, swept int
 	for _, d := range discounts {
 		if d.Status == "archived" || !isAccTestName(d.Description) {
 			continue
 		}
+		matched++
 		if err := c.ArchiveDiscount(ctx, d.ID); err != nil && !client.IsNotFound(err) {
 			log.Printf("[WARN] failed to archive leaked test discount %s (%s): %s", d.ID, d.Description, err)
+			continue
 		}
+		swept++
 	}
+	log.Printf("[INFO] paddle_discount sweeper: matched %d, swept %d", matched, swept)
 	return nil
 }
 
@@ -211,14 +233,19 @@ func sweepDiscountGroups(_ string) error {
 	if err != nil {
 		return err
 	}
+	var matched, swept int
 	for _, g := range groups {
 		if g.Status == "archived" || !isAccTestName(g.Name) {
 			continue
 		}
+		matched++
 		if err := c.ArchiveDiscountGroup(ctx, g.ID); err != nil && !client.IsNotFound(err) {
 			log.Printf("[WARN] failed to archive leaked test discount group %s (%s): %s", g.ID, g.Name, err)
+			continue
 		}
+		swept++
 	}
+	log.Printf("[INFO] paddle_discount_group sweeper: matched %d, swept %d", matched, swept)
 	return nil
 }
 
@@ -258,14 +285,19 @@ func sweepMatchingNotificationSettings(ctx context.Context, c *client.Client, ma
 	if err != nil {
 		return err
 	}
+	var matched, swept int
 	for _, ns := range settings {
 		if !match(ns) {
 			continue
 		}
+		matched++
 		if err := c.DeleteNotificationSetting(ctx, ns.ID); err != nil && !client.IsNotFound(err) {
 			log.Printf("[WARN] failed to delete leaked test notification setting %s (%s): %s", ns.ID, ns.Description, err)
+			continue
 		}
+		swept++
 	}
+	log.Printf("[INFO] paddle_notification_setting sweeper: matched %d, swept %d", matched, swept)
 	return nil
 }
 
@@ -310,5 +342,49 @@ func TestAccSweepNotificationSettings_DeletesLeakedTestObjects(t *testing.T) {
 	}
 	if !client.IsNotFound(err) {
 		t.Fatalf("GetNotificationSetting after sweep: %v", err)
+	}
+}
+
+// TestSweepMatchingProducts_LogsMatchedAndSweptCount closes an honest gap
+// found manually after a real -sweep run: the run completed successfully
+// with zero [WARN] lines, which only proves nothing it tried to sweep
+// failed — it says nothing about whether anything was actually found and
+// swept, or the sweep matched zero objects, since success was previously
+// silent either way. This confirms a summary line reports both numbers.
+func TestSweepMatchingProducts_LogsMatchedAndSweptCount(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []client.Product{
+					{ID: "pro_1", Name: "Acc Test A", TaxCategory: "standard"},
+					{ID: "pro_2", Name: "Acc Test B", TaxCategory: "standard"},
+				},
+				"meta": map[string]any{"pagination": map[string]any{"has_more": false}},
+			})
+		case http.MethodPatch:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": client.Product{ID: "pro_1", Name: "Acc Test A", TaxCategory: "standard", Status: "archived"},
+			})
+		}
+	}))
+	defer srv.Close()
+
+	var logBuf bytes.Buffer
+	log.SetOutput(&logBuf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	c := client.New(srv.URL, "test-key")
+	// Match only pro_1 — confirms "matched" and "swept" can legitimately
+	// differ from the total list size, not just report len(all products).
+	err := sweepMatchingProducts(context.Background(), c, func(p client.Product) bool { return p.ID == "pro_1" })
+	if err != nil {
+		t.Fatalf("sweepMatchingProducts: %v", err)
+	}
+
+	got := logBuf.String()
+	if !strings.Contains(got, "matched 1") || !strings.Contains(got, "swept 1") {
+		t.Errorf("log output = %q, want it to report matched=1 and swept=1", got)
 	}
 }
