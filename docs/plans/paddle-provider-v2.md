@@ -445,6 +445,29 @@ decision doc each.
 
 ---
 
+## Follow-up not in this plan's scope
+
+Raised 2026-08-09 during the pre-merge review pass: CI never actually
+validates that what lands on the Terraform Registry installs and works.
+`testAccProtoV6ProviderFactories` (`internal/provider/provider_test.go`)
+builds the provider in-process from source — acceptance tests never go
+through a real `terraform init` pulling `vivantel/paddle` from
+`registry.terraform.io`, so a manifest problem, signature verification
+failure, or missing platform binary in a release wouldn't be caught until
+a real user hit it. v0.1.0 and v0.2.0 were both confirmed manually via
+direct Registry API checks instead (see this plan's and
+`paddle-provider-v1.md`'s Step 8 status blocks).
+
+Deliberately deferred rather than added to this release's scope: a
+post-release smoke test needs the version to already exist on the
+Registry, so it's a separate workflow (manually triggered, or triggered
+on `release.yaml`'s completion) rather than something pre-merge CI can
+do — `terraform init`/`plan` against a scratch module pinned to
+`vivantel/paddle` at the just-published version, using a real API key
+from secrets. Worth a decision record (scope: sandbox vs. production key,
+which resource(s) to exercise, trigger mechanism) before implementing,
+not a same-night addition to an already-long release pipeline.
+
 ## Definition of done for this plan
 
 - Steps 0-5 marked `done`. Step 6 done or explicitly deferred with a
