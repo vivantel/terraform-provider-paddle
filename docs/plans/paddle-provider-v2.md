@@ -1,6 +1,9 @@
 ---
 title: Implementation plan — terraform-provider-paddle v2
-status: not started
+status: done — v0.2.0 released and confirmed live on the Terraform
+  Registry 2026-08-09 (PR #2 merged to master, both v0.1.0 and v0.2.0
+  present in registry.terraform.io/v1/providers/vivantel/paddle/versions,
+  all 5 resource/data-source doc pages present on the v0.2.0 record)
 date: 2026-08-08
 tags: [paddle, provider, plan, v2]
 ---
