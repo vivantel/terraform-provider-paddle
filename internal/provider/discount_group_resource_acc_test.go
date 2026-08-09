@@ -11,6 +11,14 @@ import (
 
 func TestAccPaddleDiscountGroup_basic(t *testing.T) {
 	resourceName := "paddle_discount_group.test"
+	// Paddle enforces global uniqueness on discount group name (confirmed
+	// via a real sandbox 409 discount_group_name_conflict — the push and
+	// pull_request CI jobs for the same commit ran this test concurrently
+	// against the same sandbox account using what was originally a fixed
+	// name). A random suffix per test run avoids that collision.
+	suffix := randAccTestSuffix()
+	name := "Acc Test Group " + suffix
+	renamed := "Acc Test Group Renamed " + suffix
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -19,23 +27,23 @@ func TestAccPaddleDiscountGroup_basic(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				// Create.
-				Config: providerConfig + testAccDiscountGroupConfig("Acc Test Group"),
+				Config: providerConfig + testAccDiscountGroupConfig(name),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceName, "name", "Acc Test Group"),
+					resource.TestCheckResourceAttr(resourceName, "name", name),
 					resource.TestCheckResourceAttr(resourceName, "status", "active"),
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
 				),
 			},
 			{
 				// Update: name changes in place, no replacement.
-				Config: providerConfig + testAccDiscountGroupConfig("Acc Test Group Renamed"),
+				Config: providerConfig + testAccDiscountGroupConfig(renamed),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceName, "name", "Acc Test Group Renamed"),
+					resource.TestCheckResourceAttr(resourceName, "name", renamed),
 				),
 			},
 			{
 				// A second plan against the same config must be a no-op.
-				Config:   providerConfig + testAccDiscountGroupConfig("Acc Test Group Renamed"),
+				Config:   providerConfig + testAccDiscountGroupConfig(renamed),
 				PlanOnly: true,
 			},
 			{
@@ -50,6 +58,8 @@ func TestAccPaddleDiscountGroup_basic(t *testing.T) {
 
 func TestAccPaddleDiscountGroupDataSource_basic(t *testing.T) {
 	dataSourceName := "data.paddle_discount_group.test"
+	// Same uniqueness reasoning as TestAccPaddleDiscountGroup_basic above.
+	name := "Acc Test Group For Lookup " + randAccTestSuffix()
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -57,14 +67,14 @@ func TestAccPaddleDiscountGroupDataSource_basic(t *testing.T) {
 		CheckDestroy:             testAccCheckDiscountGroupArchived("paddle_discount_group.test"),
 		Steps: []resource.TestStep{
 			{
-				Config: providerConfig + testAccDiscountGroupConfig("Acc Test Group For Lookup") + `
+				Config: providerConfig + testAccDiscountGroupConfig(name) + `
 data "paddle_discount_group" "test" {
   id = paddle_discount_group.test.id
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrPair(dataSourceName, "id", "paddle_discount_group.test", "id"),
-					resource.TestCheckResourceAttr(dataSourceName, "name", "Acc Test Group For Lookup"),
+					resource.TestCheckResourceAttr(dataSourceName, "name", name),
 					resource.TestCheckResourceAttr(dataSourceName, "status", "active"),
 				),
 			},

@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"testing"
 
@@ -42,4 +44,19 @@ func testAccPreCheck(t *testing.T) {
 // *testing.T since resource.TestCheckFunc's signature doesn't provide one.
 func newTestAccClient() *client.Client {
 	return client.New(client.SandboxBaseURL, os.Getenv("PADDLE_API_KEY"))
+}
+
+// randAccTestSuffix returns an 8-hex-character random suffix for
+// acceptance test fixture names/descriptions that Paddle enforces
+// uniqueness on (discovered for paddle_discount_group's `name` via a real
+// sandbox 409 "discount_group_name_conflict" — two CI jobs for the same
+// commit, `push` and `pull_request`, ran acceptance tests concurrently
+// against the same sandbox account using the same fixed name). Most
+// resources in this provider don't need this (Product/Price/Discount
+// don't enforce name/description uniqueness), so this is opt-in per test,
+// not baked into providerConfig or every *Config helper.
+func randAccTestSuffix() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
