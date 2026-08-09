@@ -278,3 +278,24 @@ func TestNotificationSettingJSON_SubscribedEventsUnmarshalsFromResponseObjectSha
 		t.Errorf("EndpointSecretKey = %q, want pdl_nsk_secret", ns.EndpointSecretKey)
 	}
 }
+
+func TestCheckoutDomainJSON_UnmarshalsFullResponseShape(t *testing.T) {
+	body := `{
+		"id": "chedom_1",
+		"domain": "checkout.example.com",
+		"status": "approved",
+		"payment_method_verification": {"apple_pay": {"status": "verified"}},
+		"created_at": "2026-01-01T00:00:00Z",
+		"updated_at": "2026-01-02T00:00:00Z"
+	}`
+	var d CheckoutDomain
+	if err := json.Unmarshal([]byte(body), &d); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if d.Domain != "checkout.example.com" || d.Status != "approved" {
+		t.Errorf("got = %+v, unexpected core fields", d)
+	}
+	if d.PaymentMethodVerification.ApplePay.Status != "verified" {
+		t.Errorf("PaymentMethodVerification.ApplePay.Status = %q, want verified", d.PaymentMethodVerification.ApplePay.Status)
+	}
+}

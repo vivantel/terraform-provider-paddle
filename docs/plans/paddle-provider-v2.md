@@ -389,16 +389,49 @@ same guardrail set as Step 4.
 
 ## Step 6 (stretch, do only if 4-5 land with time to spare): `paddle_checkout_domain`
 
-Status: deliberately deferred, not started — 2026-08-09. Steps 4-5 both
-landed but each needed a real-sandbox bug fix round (discount group name
-uniqueness, notification setting `api_version`), and this step's own
-prerequisite ("fetch and verify the real field list... it wasn't verified
-when this plan was written") means it would be starting a new resource
-from zero field-verification under the same time pressure that's pushing
-toward wrapping up review/merge/release. Deferring is the explicit,
-documented choice this step's own status line calls for, not a silent
-skip — pick this up as a fresh, self-contained addition whenever there's
-next capacity to spare, following the same process Steps 4-5 used.
+Status: done (as a data source only), confirmed against the real
+sandbox — 2026-08-09. Fetching the real field list (this step's own
+prerequisite) surfaced something this plan didn't anticipate: Checkout
+Domains has no create or update operation via the API at all — confirmed
+against the live API reference, not assumed — "You can't add a checkout
+domain using the API. To submit a new domain for approval, go to Paddle >
+Checkout > Website approval > Domain approval in your dashboard." Only
+List, Get, Delete, and a verify-payment-method action exist. Put to the
+user directly (two options: data-source-only, or an import-only resource
+whose `Create()` always errors) rather than guessed — data-source-only
+was chosen: an import-only resource would need `domain` marked
+`RequiresReplace` for an entity whose "replace" (destroy-then-create)
+can never actually complete, since create always fails — a footgun for
+the lowest-priority item in this whole plan, for marginal benefit over a
+read-only lookup.
+
+`client.CheckoutDomain`/`GetCheckoutDomain`/`ListCheckoutDomains` added
+(`ListCheckoutDomains` isn't for a sweeper — nothing to sweep, this
+provider never creates one — it's what
+`TestAccPaddleCheckoutDomainDataSource_basic` uses in place of the
+usual create-a-fixture pattern, since there's no API to create a fixture
+with; the test lists whatever already exists in the sandbox and skips
+cleanly if there isn't one). `checkout_domain_data_source.go`: nested
+`payment_method_verification.apple_pay.status` modeled as nested
+`SingleNestedAttribute`s (not flattened), matching the real response
+shape. `Read()` fetches only `id` — this model has Required non-pointer
+nested struct fields, the same class of fix `price_resource.go`'s
+`Read()` needed. Unit test for `fromAPICheckoutDomain`'s nested-field
+mapping. Acceptance test run against CI (PR #3, run 31299857928): this
+sandbox account has no checkout domain configured at all, so the test
+hit its own skip path (`ListCheckoutDomains` returned empty, `t.Skip`
+fired cleanly) — confirms that path works, but **the actual Get/lookup
+path against a real domain was not exercised against the sandbox**,
+only against fabricated unit test values. `GetCheckoutDomain` follows the
+identical `c.do()`-based pattern every other proven `Get*` method in this
+client already uses, so the risk is low, but this is an honest gap, not
+a silent claim of full coverage — pick this up for real confirmation the
+next time a checkout domain gets added to the sandbox account (via the
+dashboard, per the README's new "Checkout domains" section) rather than
+leaving it unconfirmed indefinitely. Docs regenerated
+(`examples/data-sources/paddle_checkout_domain/` added, `provider.go`'s
+`Description` updated to mention domain lookup without claiming a
+resource that doesn't exist).
 
 Implements: [[0007-v2-scope-discount-groups-and-notification-settings]].
 

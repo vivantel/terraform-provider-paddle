@@ -1,7 +1,7 @@
 // Package client is a minimal HTTP client for the Paddle Billing API
 // (https://developer.paddle.com/api-reference/overview). It only implements
-// the Products, Prices, Discounts, and Discount Groups endpoints this
-// provider currently needs.
+// the Products, Prices, Discounts, Discount Groups, Notification Settings,
+// and Checkout Domains endpoints this provider currently needs.
 package client
 
 import (
@@ -774,6 +774,75 @@ func (c *Client) ListNotificationSettings(ctx context.Context) ([]NotificationSe
 	for {
 		var env notificationSettingListEnvelope
 		if err := c.do(ctx, http.MethodGet, listPath("/notification-settings", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
+// ── Checkout Domains — https://developer.paddle.com/api-reference/checkout-domains ─
+//
+// Unlike every other entity this provider handles, there is no create (or
+// update) operation for checkout domains at all — confirmed against the
+// real API reference, 2026-08-09: "You can't add a checkout domain using
+// the API. To submit a new domain for approval, go to Paddle > Checkout >
+// Website approval > Domain approval in your dashboard." Only List, Get,
+// Delete, and a verify-payment-method action exist. This provider only
+// implements Get (a `paddle_checkout_domain` data source — see
+// docs/decisions/0007's Step 6 status for why a full read/write resource
+// isn't modeled for an entity that can't be created or updated via API at
+// all).
+
+type ApplePayVerification struct {
+	Status string `json:"status"`
+}
+
+type PaymentMethodVerification struct {
+	ApplePay ApplePayVerification `json:"apple_pay"`
+}
+
+type CheckoutDomain struct {
+	ID                        string                    `json:"id,omitempty"`
+	Domain                    string                    `json:"domain"`
+	Status                    string                    `json:"status,omitempty"`
+	PaymentMethodVerification PaymentMethodVerification `json:"payment_method_verification"`
+	CreatedAt                 string                    `json:"created_at,omitempty"`
+	UpdatedAt                 string                    `json:"updated_at,omitempty"`
+}
+
+type checkoutDomainEnvelope struct {
+	Data CheckoutDomain `json:"data"`
+}
+
+func (c *Client) GetCheckoutDomain(ctx context.Context, id string) (*CheckoutDomain, error) {
+	var env checkoutDomainEnvelope
+	if err := c.do(ctx, http.MethodGet, "/checkout-domains/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+type checkoutDomainListEnvelope struct {
+	Data []CheckoutDomain `json:"data"`
+	Meta paginationMeta   `json:"meta"`
+}
+
+// ListCheckoutDomains — see ListProducts' comment for the pagination
+// shape. Used by the acceptance test (there's no way to create a fixture
+// via API — see this section's own comment — so the test lists whatever
+// already exists in the sandbox rather than provisioning its own) rather
+// than by any sweeper (nothing to sweep: this provider never creates a
+// checkout domain in the first place).
+func (c *Client) ListCheckoutDomains(ctx context.Context) ([]CheckoutDomain, error) {
+	var all []CheckoutDomain
+	after := ""
+	for {
+		var env checkoutDomainListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/checkout-domains", after), nil, &env); err != nil {
 			return nil, err
 		}
 		all = append(all, env.Data...)
