@@ -1,0 +1,36 @@
+name: Sweep
+
+# Sweepers (internal/provider/sweep_test.go) are proven correct against the
+# real sandbox (see docs/plans/paddle-provider-v2.md Step 3) but nothing
+# ever actually invoked them automatically — only a manual `-sweep` run or
+# their own dedicated verification tests exercised them. That's a real gap:
+# terraform-plugin-testing's own destroy-on-failure already cleans up after
+# a failed test *assertion*, but not after a CI runner that dies mid-test
+# (timeout, OOM) before its own cleanup can run. This is the automatic path
+# for that case.
+#
+# `-sweep=<locations>` alone (no `-run` needed) puts TestMain into
+# sweep-only mode — it skips normal test execution entirely and runs only
+# registered sweepers (confirmed via `go doc
+# .../terraform-plugin-testing/helper/resource TestMain`, not assumed).
+# "sandbox" is a placeholder location string; every sweeper function here
+# ignores it — Paddle has no region concept, unlike the AWS-provider
+# convention this pattern originates from.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+          cache: true
+      - run: go test ./internal/provider/... -sweep=sandbox -v
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
