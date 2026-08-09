@@ -66,12 +66,12 @@ func (d *ProductDataSource) Read(ctx context.Context, req datasource.ReadRequest
 
 	product, err := d.client.GetProduct(ctx, config.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading Paddle product", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle product", client.FriendlyErrorMessage(err))
 		return
 	}
 
 	if err := fromAPIProduct(*product, &config); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
+		resp.Diagnostics.AddError("Error decoding Paddle product response", client.FriendlyErrorMessage(err))
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)

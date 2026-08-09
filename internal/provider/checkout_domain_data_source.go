@@ -125,7 +125,7 @@ func (d *CheckoutDomainDataSource) Read(ctx context.Context, req datasource.Read
 
 	domain, err := d.client.GetCheckoutDomain(ctx, config.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading Paddle checkout domain", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle checkout domain", client.FriendlyErrorMessage(err))
 		return
 	}
 

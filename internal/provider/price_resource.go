@@ -287,12 +287,12 @@ func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, 
 
 	created, err := r.client.CreatePrice(ctx, apiPrice)
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating Paddle price", err.Error())
+		resp.Diagnostics.AddError("Error creating Paddle price", client.FriendlyErrorMessage(err))
 		return
 	}
 
 	if err := fromAPIPrice(*created, &plan); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
+		resp.Diagnostics.AddError("Error decoding Paddle price response", client.FriendlyErrorMessage(err))
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -321,12 +321,12 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading Paddle price", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle price", client.FriendlyErrorMessage(err))
 		return
 	}
 
 	if err := fromAPIPrice(*price, &state); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
+		resp.Diagnostics.AddError("Error decoding Paddle price response", client.FriendlyErrorMessage(err))
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -353,12 +353,12 @@ func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 
 	updated, err := r.client.UpdatePrice(ctx, state.ID.ValueString(), apiPriceUpdate)
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating Paddle price", err.Error())
+		resp.Diagnostics.AddError("Error updating Paddle price", client.FriendlyErrorMessage(err))
 		return
 	}
 
 	if err := fromAPIPrice(*updated, &plan); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
+		resp.Diagnostics.AddError("Error decoding Paddle price response", client.FriendlyErrorMessage(err))
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -374,7 +374,7 @@ func (r *PriceResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 	// A 404 means the price is already gone — successful destroy, not an
 	// error. Same tolerance Read() already has for the same status.
 	if err := r.client.ArchivePrice(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error archiving Paddle price", err.Error())
+		resp.Diagnostics.AddError("Error archiving Paddle price", client.FriendlyErrorMessage(err))
 	}
 }
 

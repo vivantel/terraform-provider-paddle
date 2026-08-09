@@ -92,6 +92,41 @@ func IsNotFound(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }
 
+// FriendlyErrorMessage returns a human-readable message for err, meant for
+// surfacing directly in a Terraform diagnostic — resources call this
+// instead of err.Error() when adding a Diagnostics error for anything that
+// came back from this client. If err is (or wraps) an *APIError whose Body
+// parses into Paddle's documented {"error":{"code":...,"detail":...}}
+// envelope, this returns the detail (with the code appended in
+// parentheses, if present) — "currency_code must be a valid ISO 4217 code
+// (invalid_currency_code)" instead of the raw JSON blob. Any other case —
+// a non-APIError, malformed JSON, or JSON that doesn't match the
+// documented shape — falls back to err.Error() unchanged. This is
+// deliberately best-effort: the APIError type's own comment already notes
+// the exact error shape varies more than the success shape does, so this
+// must fail safe to the existing behavior rather than risk surfacing an
+// empty or misleading message when a response doesn't match what's
+// expected.
+func FriendlyErrorMessage(err error) string {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return err.Error()
+	}
+	var envelope struct {
+		Error struct {
+			Code   string `json:"code"`
+			Detail string `json:"detail"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal([]byte(apiErr.Body), &envelope); jsonErr != nil || envelope.Error.Detail == "" {
+		return err.Error()
+	}
+	if envelope.Error.Code != "" {
+		return fmt.Sprintf("%s (%s)", envelope.Error.Detail, envelope.Error.Code)
+	}
+	return envelope.Error.Detail
+}
+
 // do sends a request, retrying on 429 (rate limited) and 5xx (transient
 // upstream failure) with bounded exponential backoff, within an overall
 // budget across the whole call (see retryOverallBudget). A Retry-After
@@ -159,7 +194,11 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		}
 
 		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		// The body is already fully read above (or io.ReadAll's own error
+		// is what's returned below); a Close() failure here has nothing
+		// left to lose and nothing meaningful to do about — the read
+		// result already determines this attempt's outcome.
+		_ = resp.Body.Close()
 		if err != nil {
 			return fmt.Errorf("read response body: %w", err)
 		}

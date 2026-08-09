@@ -79,7 +79,7 @@ func (d *DiscountDataSource) Read(ctx context.Context, req datasource.ReadReques
 
 	discount, err := d.client.GetDiscount(ctx, config.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading Paddle discount", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle discount", client.FriendlyErrorMessage(err))
 		return
 	}
 

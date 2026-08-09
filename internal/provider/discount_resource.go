@@ -323,7 +323,7 @@ func (r *DiscountResource) Create(ctx context.Context, req resource.CreateReques
 
 	created, err := r.client.CreateDiscount(ctx, apiDiscount)
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating Paddle discount", err.Error())
+		resp.Diagnostics.AddError("Error creating Paddle discount", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -353,7 +353,7 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading Paddle discount", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle discount", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -385,7 +385,7 @@ func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateReques
 
 	updated, err := r.client.UpdateDiscount(ctx, state.ID.ValueString(), apiDiscount)
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating Paddle discount", err.Error())
+		resp.Diagnostics.AddError("Error updating Paddle discount", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -406,7 +406,7 @@ func (r *DiscountResource) Delete(ctx context.Context, req resource.DeleteReques
 	// A 404 means the discount is already gone — successful destroy, not
 	// an error. Same tolerance Read() already has for the same status.
 	if err := r.client.ArchiveDiscount(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error archiving Paddle discount", err.Error())
+		resp.Diagnostics.AddError("Error archiving Paddle discount", client.FriendlyErrorMessage(err))
 	}
 }
 

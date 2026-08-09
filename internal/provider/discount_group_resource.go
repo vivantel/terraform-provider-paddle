@@ -86,7 +86,7 @@ func (r *DiscountGroupResource) Create(ctx context.Context, req resource.CreateR
 
 	created, err := r.client.CreateDiscountGroup(ctx, toAPIDiscountGroup(plan))
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating Paddle discount group", err.Error())
+		resp.Diagnostics.AddError("Error creating Paddle discount group", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -112,7 +112,7 @@ func (r *DiscountGroupResource) Read(ctx context.Context, req resource.ReadReque
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading Paddle discount group", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle discount group", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -135,7 +135,7 @@ func (r *DiscountGroupResource) Update(ctx context.Context, req resource.UpdateR
 
 	updated, err := r.client.UpdateDiscountGroup(ctx, state.ID.ValueString(), toAPIDiscountGroup(plan))
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating Paddle discount group", err.Error())
+		resp.Diagnostics.AddError("Error updating Paddle discount group", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -154,7 +154,7 @@ func (r *DiscountGroupResource) Delete(ctx context.Context, req resource.DeleteR
 	// an error. Same tolerance every other resource's Delete() has for the
 	// same status.
 	if err := r.client.ArchiveDiscountGroup(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error archiving Paddle discount group", err.Error())
+		resp.Diagnostics.AddError("Error archiving Paddle discount group", client.FriendlyErrorMessage(err))
 	}
 }
 
