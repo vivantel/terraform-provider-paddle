@@ -275,8 +275,11 @@ resource built after all of them existed, apply every one from the start.
 
 ## Step 5: `paddle_notification_setting` resource + data source
 
-Status: implemented, pending real-sandbox CI confirmation. First push
-failed with a real finding, not a flake: `api_version` was modeled
+Status: done, confirmed green against the real sandbox — 2026-08-09 (CI
+run 31298051030: `TestAccPaddleNotificationSetting_basic`,
+`TestAccPaddleNotificationSetting_activeFalseAtCreate`, and
+`TestAccPaddleNotificationSettingDataSource_basic` all passed). First
+push failed with a real finding, not a flake: `api_version` was modeled
 Optional-only, but Paddle silently returns its own default (e.g. `1`)
 even when the field is omitted from config — "Provider produced
 inconsistent result after apply: .api_version: was null, but now
@@ -288,8 +291,7 @@ now Optional+Computed with `UseStateForUnknown`, and both
 `toAPINotificationSettingCreate`/`Update` gained the matching
 `IsUnknown()` check next to their existing `IsNull()` check (same
 regression class as every other Optional+Computed field in this
-provider). Re-pushed; update this line once the retry is confirmed
-green. Confirmed against the real
+provider). Confirmed against the real
 API reference (not assumed) a shape asymmetry decision 0007 didn't call
 out: the create/update request's `subscribed_events` is an array of
 strings, but every response (create, update, get) returns it as an array
