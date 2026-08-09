@@ -47,3 +47,14 @@ resource "paddle_notification_setting" "orders" {
 
 - `endpoint_secret_key` (String, Sensitive) Secret key Paddle uses to sign webhook payloads sent to this destination.
 - `id` (String) Paddle notification setting ID (`ntfset_...`).
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Import using the Paddle notification setting ID.
+terraform import paddle_notification_setting.orders ntfset_01h8xd4x1r5jz1y9xzq1dqk6mt
+```
