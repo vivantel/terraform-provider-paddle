@@ -292,7 +292,7 @@ func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, 
 	}
 
 	if err := fromAPIPrice(*created, &plan); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle price response", client.FriendlyErrorMessage(err))
+		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -326,7 +326,7 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	}
 
 	if err := fromAPIPrice(*price, &state); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle price response", client.FriendlyErrorMessage(err))
+		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -358,7 +358,7 @@ func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 	}
 
 	if err := fromAPIPrice(*updated, &plan); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle price response", client.FriendlyErrorMessage(err))
+		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
