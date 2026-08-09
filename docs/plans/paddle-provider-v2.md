@@ -214,18 +214,18 @@ Implements: [[0009-tflog-observability-and-acceptance-test-sweepers]].
 
 ## Step 4: `paddle_discount_group` resource + data source
 
-Status: implemented, pending real-sandbox CI confirmation. First push's
+Status: done, confirmed green against the real sandbox — 2026-08-09
+(CI run 31297606621, both `TestAccPaddleDiscountGroup_basic` and
+`TestAccPaddleDiscountGroupDataSource_basic` passed). First push's
 `pull_request`-triggered job failed with a real finding, not a flake:
 Paddle enforces global uniqueness on discount group `name` (409
 `discount_group_name_conflict`) — the `push` and `pull_request` CI jobs
-for the same commit ran `TestAccPaddleDiscountGroup_basic`/
-`TestAccPaddleDiscountGroupDataSource_basic` concurrently against the
-same sandbox account with the fixed names the tests originally used.
-Fixed by adding `randAccTestSuffix()` (provider_test.go) and using it in
-both discount-group acceptance tests — the first resource in this
-provider needing this, since Product/Price/Discount don't enforce
-name/description uniqueness. Re-pushed; update this line once the retry
-is confirmed green.
+for the same commit ran those two tests concurrently against the same
+sandbox account with the fixed names the tests originally used. Fixed by
+adding `randAccTestSuffix()` (provider_test.go) and using it in both
+discount-group acceptance tests — the first resource in this provider
+needing this, since Product/Price/Discount don't enforce
+name/description uniqueness.
 `internal/client/client.go` gained `DiscountGroup` (just `Name`/`Status`,
 confirmed against decision 0007's field list — no `custom_data`, Paddle's
 API genuinely doesn't have it for this entity, checked rather than
