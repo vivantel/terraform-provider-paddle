@@ -42,6 +42,36 @@ func TestToAPINotificationSettingCreate_NeverSendsActive(t *testing.T) {
 	}
 }
 
+// TestToAPINotificationSettingCreate_UnknownAPIVersionOmitted is a
+// regression test for a real sandbox failure ("Provider produced
+// inconsistent result after apply: .api_version: was null, but now
+// cty.NumberIntVal(1)"): api_version needs to be Optional+Computed (Paddle
+// silently defaults it to the account default, e.g. 1, even when omitted
+// from config — the same class of "API auto-assigns when omitted" bug
+// paddle_discount's `code` attribute already has a comment about). Once
+// Computed, an omitted api_version is Unknown at Create, not Null — this
+// confirms the IsUnknown() check (not just IsNull()) is in place, the same
+// class of bug documented on every other Optional+Computed field in this
+// provider: ValueInt64() on an Unknown value silently returns 0 instead of
+// "omit the field".
+func TestToAPINotificationSettingCreate_UnknownAPIVersionOmitted(t *testing.T) {
+	m := NotificationSettingResourceModel{
+		Description:      types.StringValue("Order events"),
+		Type:             types.StringValue("url"),
+		Destination:      types.StringValue("https://example.com/webhook"),
+		SubscribedEvents: mustListValue(t, "transaction.billed"),
+		Active:           types.BoolValue(true),
+		APIVersion:       types.Int64Unknown(),
+	}
+	got, diags := toAPINotificationSettingCreate(context.Background(), m)
+	if diags.HasError() {
+		t.Fatalf("toAPINotificationSettingCreate: %v", diags)
+	}
+	if got.APIVersion != nil {
+		t.Errorf("APIVersion = %v, want nil (field omitted) for an Unknown config value", got.APIVersion)
+	}
+}
+
 func TestToAPINotificationSettingUpdate_CarriesActiveButNeverType(t *testing.T) {
 	m := NotificationSettingResourceModel{
 		Description:      types.StringValue("Order events"),

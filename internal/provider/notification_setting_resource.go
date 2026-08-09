@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
@@ -89,8 +90,14 @@ func (r *NotificationSettingResource) Schema(_ context.Context, _ resource.Schem
 				MarkdownDescription: "Event type names to subscribe to (e.g. `transaction.billed`). Paddle's API is the source of truth for valid values — see https://developer.paddle.com/webhooks/overview for the full list; this schema doesn't replicate it.",
 			},
 			"api_version": schema.Int64Attribute{
-				Optional:            true,
-				MarkdownDescription: "API version used for event payloads sent to this destination. Omit for the account default.",
+				Optional: true,
+				Computed: true,
+				MarkdownDescription: "API version used for event payloads sent to this destination. Omit for the account " +
+					"default. Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle " +
+					"returns its own default (e.g. 1) even when this is omitted rather than leaving it null, so modeling " +
+					"this as Optional-only produced \"Provider produced inconsistent result after apply\" on the very " +
+					"first real Create — the same class of fix as `paddle_discount`'s `code`.",
+				PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			},
 			"include_sensitive_fields": schema.BoolAttribute{
 				Optional:            true,
@@ -145,7 +152,14 @@ func toAPINotificationSettingCreate(ctx context.Context, m NotificationSettingRe
 		Destination:      m.Destination.ValueString(),
 		SubscribedEvents: events,
 	}
-	if !m.APIVersion.IsNull() {
+	// IsUnknown() check matters here specifically because api_version
+	// became Optional+Computed (see the schema comment on "api_version") —
+	// on Create with it omitted from config, it's Unknown (not Null) until
+	// Paddle fills in the account default. IsNull() alone is false for an
+	// Unknown value too, so skipping the IsUnknown() check would send
+	// api_version: 0 (ValueInt64() on an Unknown value silently returns the
+	// zero value) instead of omitting the field.
+	if !m.APIVersion.IsNull() && !m.APIVersion.IsUnknown() {
 		v := int(m.APIVersion.ValueInt64())
 		ns.APIVersion = &v
 	}
@@ -178,7 +192,14 @@ func toAPINotificationSettingUpdate(ctx context.Context, m NotificationSettingRe
 		v := m.Active.ValueBool()
 		ns.Active = &v
 	}
-	if !m.APIVersion.IsNull() {
+	// IsUnknown() check matters here specifically because api_version
+	// became Optional+Computed (see the schema comment on "api_version") —
+	// on Create with it omitted from config, it's Unknown (not Null) until
+	// Paddle fills in the account default. IsNull() alone is false for an
+	// Unknown value too, so skipping the IsUnknown() check would send
+	// api_version: 0 (ValueInt64() on an Unknown value silently returns the
+	// zero value) instead of omitting the field.
+	if !m.APIVersion.IsNull() && !m.APIVersion.IsUnknown() {
 		v := int(m.APIVersion.ValueInt64())
 		ns.APIVersion = &v
 	}
