@@ -1,12 +1,12 @@
 # terraform-provider-paddle
 
-Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources) by calling Paddle's public REST API directly — no third-party service in the request path.
+Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources), and looks up checkout domains via `paddle_checkout_domain` (data source only — see below), by calling Paddle's public REST API directly — no third-party service in the request path.
 
 Not affiliated with or endorsed by Paddle.
 
 ## Status
 
-Pre-1.0 (`v0.2.x`), but every resource and data source is verified end-to-end against a real Paddle sandbox account, not just built and unit-tested — CI's `acceptance` job runs the full create/update/import/destroy lifecycle for all five resources plus their data sources on every push (`.github/workflows/ci.yaml`). Schema fields were taken from Paddle's published API reference (`/products`, `/prices`, `/discounts`, `/discount-groups`, `/notification-settings`), not guessed. Product/Price/Discount/Discount Group archive on destroy (Paddle has no hard delete for these); Notification Setting is deleted for real — see `docs/plans/paddle-provider-v2.md` for why.
+Pre-1.0 (`v0.2.x`), but every resource and data source is verified end-to-end against a real Paddle sandbox account, not just built and unit-tested — CI's `acceptance` job runs the full create/update/import/destroy lifecycle for all five resources plus their data sources on every push (`.github/workflows/ci.yaml`); `paddle_checkout_domain` (data-source-only, see below) is checked against whatever real domain already exists in the sandbox account, since there's no API to create a fixture with. Schema fields were taken from Paddle's published API reference (`/products`, `/prices`, `/discounts`, `/discount-groups`, `/notification-settings`, `/checkout-domains`), not guessed. Product/Price/Discount/Discount Group archive on destroy (Paddle has no hard delete for these); Notification Setting is deleted for real — see `docs/plans/paddle-provider-v2.md` for why.
 
 ## Usage
 
@@ -57,6 +57,25 @@ data "paddle_product" "existing" {
 ```
 
 Full schema reference and more examples: [`docs/`](docs/index.md), or on the [Terraform Registry](https://registry.terraform.io/providers/vivantel/paddle/latest) once published (see below).
+
+### Checkout domains
+
+`paddle_checkout_domain` is a **data source only** — there is no matching resource, and it can't be created via `terraform apply`. Paddle's API has no create or update operation for checkout domains at all (confirmed against the live API reference, not assumed): a domain must be added and approved through the Paddle dashboard first —
+
+1. Paddle dashboard → **Checkout → Website approval → Domain approval**, add the domain, wait for Paddle to move it out of `pending_review`.
+2. Once approved, look it up from Terraform by its ID (`chedom_...`, visible in the dashboard or via `GET /checkout-domains`):
+
+   ```hcl
+   data "paddle_checkout_domain" "example" {
+     id = "chedom_..."
+   }
+
+   output "checkout_domain_status" {
+     value = data.paddle_checkout_domain.example.status
+   }
+   ```
+
+There's nothing to `terraform import` either — this data source is read-only lookup, not lifecycle management, for exactly this entity type.
 
 ## Development
 
