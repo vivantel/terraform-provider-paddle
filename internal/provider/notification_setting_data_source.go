@@ -70,7 +70,7 @@ func (d *NotificationSettingDataSource) Read(ctx context.Context, req datasource
 
 	ns, err := d.client.GetNotificationSetting(ctx, config.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading Paddle notification setting", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle notification setting", client.FriendlyErrorMessage(err))
 		return
 	}
 

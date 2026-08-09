@@ -299,3 +299,56 @@ func TestCheckoutDomainJSON_UnmarshalsFullResponseShape(t *testing.T) {
 		t.Errorf("PaymentMethodVerification.ApplePay.Status = %q, want verified", d.PaymentMethodVerification.ApplePay.Status)
 	}
 }
+
+func TestFriendlyErrorMessage_ParsesDetailAndCode(t *testing.T) {
+	err := &APIError{StatusCode: 400, Body: `{"error":{"type":"request_error","code":"invalid_currency_code","detail":"currency_code must be a valid ISO 4217 code"},"meta":{"request_id":"abc"}}`}
+	got := FriendlyErrorMessage(err)
+	want := "currency_code must be a valid ISO 4217 code (invalid_currency_code)"
+	if got != want {
+		t.Errorf("FriendlyErrorMessage = %q, want %q", got, want)
+	}
+}
+
+func TestFriendlyErrorMessage_DetailOnlyWhenCodeMissing(t *testing.T) {
+	err := &APIError{StatusCode: 400, Body: `{"error":{"detail":"something went wrong"}}`}
+	got := FriendlyErrorMessage(err)
+	if got != "something went wrong" {
+		t.Errorf("FriendlyErrorMessage = %q, want %q", got, "something went wrong")
+	}
+}
+
+func TestFriendlyErrorMessage_FallsBackOnMalformedJSON(t *testing.T) {
+	err := &APIError{StatusCode: 500, Body: "not json at all"}
+	got := FriendlyErrorMessage(err)
+	if got != err.Error() {
+		t.Errorf("FriendlyErrorMessage = %q, want fallback to err.Error() = %q", got, err.Error())
+	}
+}
+
+func TestFriendlyErrorMessage_FallsBackWhenDetailMissing(t *testing.T) {
+	// Valid JSON, but not the documented envelope shape (empty detail) —
+	// the type comment on APIError says the exact shape varies, so this
+	// must fail safe to the raw body rather than surface an empty string.
+	err := &APIError{StatusCode: 500, Body: `{"something":"else"}`}
+	got := FriendlyErrorMessage(err)
+	if got != err.Error() {
+		t.Errorf("FriendlyErrorMessage = %q, want fallback to err.Error() = %q", got, err.Error())
+	}
+}
+
+func TestFriendlyErrorMessage_NonAPIErrorReturnsErrorString(t *testing.T) {
+	err := errors.New("boom")
+	got := FriendlyErrorMessage(err)
+	if got != "boom" {
+		t.Errorf("FriendlyErrorMessage = %q, want %q", got, "boom")
+	}
+}
+
+func TestFriendlyErrorMessage_UnwrapsWrappedAPIError(t *testing.T) {
+	apiErr := &APIError{StatusCode: 400, Body: `{"error":{"detail":"bad request"}}`}
+	wrapped := fmt.Errorf("do request: %w", apiErr)
+	got := FriendlyErrorMessage(wrapped)
+	if got != "bad request" {
+		t.Errorf("FriendlyErrorMessage = %q, want %q", got, "bad request")
+	}
+}

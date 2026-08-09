@@ -88,12 +88,12 @@ func (d *PriceDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 
 	price, err := d.client.GetPrice(ctx, config.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading Paddle price", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle price", client.FriendlyErrorMessage(err))
 		return
 	}
 
 	if err := fromAPIPrice(*price, &config); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
+		resp.Diagnostics.AddError("Error decoding Paddle price response", client.FriendlyErrorMessage(err))
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)

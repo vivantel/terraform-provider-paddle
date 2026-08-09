@@ -55,7 +55,7 @@ func (d *DiscountGroupDataSource) Read(ctx context.Context, req datasource.ReadR
 
 	group, err := d.client.GetDiscountGroup(ctx, config.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error reading Paddle discount group", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle discount group", client.FriendlyErrorMessage(err))
 		return
 	}
 

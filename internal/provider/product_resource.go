@@ -160,12 +160,12 @@ func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest
 
 	created, err := r.client.CreateProduct(ctx, apiProduct)
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating Paddle product", err.Error())
+		resp.Diagnostics.AddError("Error creating Paddle product", client.FriendlyErrorMessage(err))
 		return
 	}
 
 	if err := fromAPIProduct(*created, &plan); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
+		resp.Diagnostics.AddError("Error decoding Paddle product response", client.FriendlyErrorMessage(err))
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -192,12 +192,12 @@ func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, re
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading Paddle product", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle product", client.FriendlyErrorMessage(err))
 		return
 	}
 
 	if err := fromAPIProduct(*product, &state); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
+		resp.Diagnostics.AddError("Error decoding Paddle product response", client.FriendlyErrorMessage(err))
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -224,12 +224,12 @@ func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	updated, err := r.client.UpdateProduct(ctx, state.ID.ValueString(), apiProduct)
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating Paddle product", err.Error())
+		resp.Diagnostics.AddError("Error updating Paddle product", client.FriendlyErrorMessage(err))
 		return
 	}
 
 	if err := fromAPIProduct(*updated, &plan); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
+		resp.Diagnostics.AddError("Error decoding Paddle product response", client.FriendlyErrorMessage(err))
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -247,7 +247,7 @@ func (r *ProductResource) Delete(ctx context.Context, req resource.DeleteRequest
 	// successful destroy from Terraform's perspective, not an error, the
 	// same tolerance Read() already has for the same status.
 	if err := r.client.ArchiveProduct(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error archiving Paddle product", err.Error())
+		resp.Diagnostics.AddError("Error archiving Paddle product", client.FriendlyErrorMessage(err))
 	}
 }
 

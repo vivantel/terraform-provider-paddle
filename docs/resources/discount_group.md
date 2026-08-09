@@ -36,3 +36,14 @@ resource "paddle_discount" "vip_20_off" {
 
 - `id` (String) Paddle discount group ID (`dsg_...`).
 - `status` (String) `active` or `archived`.
+
+## Import
+
+Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
+```shell
+# Import using the Paddle discount group ID.
+terraform import paddle_discount_group.vip dsg_01h8xd4x1r5jz1y9xzq1dqk6mt
+```

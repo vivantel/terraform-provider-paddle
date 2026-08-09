@@ -252,7 +252,7 @@ func (r *NotificationSettingResource) Create(ctx context.Context, req resource.C
 
 	created, err := r.client.CreateNotificationSetting(ctx, createBody)
 	if err != nil {
-		resp.Diagnostics.AddError("Error creating Paddle notification setting", err.Error())
+		resp.Diagnostics.AddError("Error creating Paddle notification setting", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -269,7 +269,7 @@ func (r *NotificationSettingResource) Create(ctx context.Context, req resource.C
 			SubscribedEvents: eventNamesOf(created),
 		})
 		if err != nil {
-			resp.Diagnostics.AddError("Error setting initial active state on Paddle notification setting", err.Error())
+			resp.Diagnostics.AddError("Error setting initial active state on Paddle notification setting", client.FriendlyErrorMessage(err))
 			return
 		}
 		created = updated
@@ -311,7 +311,7 @@ func (r *NotificationSettingResource) Read(ctx context.Context, req resource.Rea
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Error reading Paddle notification setting", err.Error())
+		resp.Diagnostics.AddError("Error reading Paddle notification setting", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -343,7 +343,7 @@ func (r *NotificationSettingResource) Update(ctx context.Context, req resource.U
 
 	updated, err := r.client.UpdateNotificationSetting(ctx, state.ID.ValueString(), updateBody)
 	if err != nil {
-		resp.Diagnostics.AddError("Error updating Paddle notification setting", err.Error())
+		resp.Diagnostics.AddError("Error updating Paddle notification setting", client.FriendlyErrorMessage(err))
 		return
 	}
 
@@ -366,7 +366,7 @@ func (r *NotificationSettingResource) Delete(ctx context.Context, req resource.D
 	// gone — successful destroy, not an error, same tolerance every other
 	// resource's Delete() has for its own removal path.
 	if err := r.client.DeleteNotificationSetting(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
-		resp.Diagnostics.AddError("Error deleting Paddle notification setting", err.Error())
+		resp.Diagnostics.AddError("Error deleting Paddle notification setting", client.FriendlyErrorMessage(err))
 	}
 }
 
