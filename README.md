@@ -1,12 +1,12 @@
 # terraform-provider-paddle
 
-Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, and `paddle_discount` (plus matching data sources) by calling Paddle's public REST API directly — no third-party service in the request path.
+Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources) by calling Paddle's public REST API directly — no third-party service in the request path.
 
 Not affiliated with or endorsed by Paddle.
 
 ## Status
 
-Pre-1.0 (`v0.1.x`), but every resource and data source is verified end-to-end against a real Paddle sandbox account, not just built and unit-tested — CI's `acceptance` job runs the full create/update/import/archive-on-destroy lifecycle for all three resources plus their data sources on every push (`.github/workflows/ci.yaml`). Schema fields were taken from Paddle's published API reference (`/products`, `/prices`, `/discounts`), not guessed.
+Pre-1.0 (`v0.2.x`), but every resource and data source is verified end-to-end against a real Paddle sandbox account, not just built and unit-tested — CI's `acceptance` job runs the full create/update/import/destroy lifecycle for all five resources plus their data sources on every push (`.github/workflows/ci.yaml`). Schema fields were taken from Paddle's published API reference (`/products`, `/prices`, `/discounts`, `/discount-groups`, `/notification-settings`), not guessed. Product/Price/Discount/Discount Group archive on destroy (Paddle has no hard delete for these); Notification Setting is deleted for real — see `docs/plans/paddle-provider-v2.md` for why.
 
 ## Usage
 

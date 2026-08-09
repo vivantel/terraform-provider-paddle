@@ -364,7 +364,16 @@ same guardrail set as Step 4.
 
 ## Step 6 (stretch, do only if 4-5 land with time to spare): `paddle_checkout_domain`
 
-Status: not started
+Status: deliberately deferred, not started — 2026-08-09. Steps 4-5 both
+landed but each needed a real-sandbox bug fix round (discount group name
+uniqueness, notification setting `api_version`), and this step's own
+prerequisite ("fetch and verify the real field list... it wasn't verified
+when this plan was written") means it would be starting a new resource
+from zero field-verification under the same time pressure that's pushing
+toward wrapping up review/merge/release. Deferring is the explicit,
+documented choice this step's own status line calls for, not a silent
+skip — pick this up as a fresh, self-contained addition whenever there's
+next capacity to spare, following the same process Steps 4-5 used.
 
 Implements: [[0007-v2-scope-discount-groups-and-notification-settings]].
 
@@ -378,7 +387,22 @@ Implements: [[0007-v2-scope-discount-groups-and-notification-settings]].
 
 ## Step 7: Release polish
 
-Status: not started
+Status: partially done — 2026-08-09. Item 2 (`CONTRIBUTING.md`) done:
+deliberately lean, points at `README.md`'s existing Development/Publishing
+sections rather than duplicating them, covers the `docs/{decisions,facts,
+guardrails,plans}/` knowledge-artifact convention and the non-obvious
+per-resource patterns (`IsNull()`+`IsUnknown()`, Default vs
+UseStateForUnknown, `GetAttribute`-only `Read()`, dedicated update-body
+types) in one place instead of only living as scattered code comments.
+`README.md` also updated: resource list, resource count, and archive-vs-
+real-delete distinction now reflect v2, not just v1. Item 1
+(`CHANGELOG.md`) deferred to the actual `v0.2.0` tagging step (this plan's
+Definition of Done / the release task that follows it) rather than done
+here — regenerating it now, before the review pass, would need
+regenerating again if review produces any further commits. Item 3 (logo)
+deliberately deferred — explicitly called out as this plan's lowest-
+priority item, not worth spending remaining time on before wrapping up
+review/merge/release.
 
 Not tied to a specific decision record — housekeeping items mentioned in
 the conversation that produced this plan, worth doing but not worth a
