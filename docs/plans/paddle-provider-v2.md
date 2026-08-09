@@ -417,12 +417,21 @@ cleanly if there isn't one). `checkout_domain_data_source.go`: nested
 shape. `Read()` fetches only `id` — this model has Required non-pointer
 nested struct fields, the same class of fix `price_resource.go`'s
 `Read()` needed. Unit test for `fromAPICheckoutDomain`'s nested-field
-mapping; acceptance test confirmed via CI against the real sandbox
-(non-empty case: the sandbox account already has an approved domain from
-earlier setup, so the skip path wasn't exercised, only the real lookup
-was). Docs regenerated (`examples/data-sources/paddle_checkout_domain/`
-added, `provider.go`'s `Description` updated to mention domain lookup
-without claiming a resource that doesn't exist).
+mapping. Acceptance test run against CI (PR #3, run 31299857928): this
+sandbox account has no checkout domain configured at all, so the test
+hit its own skip path (`ListCheckoutDomains` returned empty, `t.Skip`
+fired cleanly) — confirms that path works, but **the actual Get/lookup
+path against a real domain was not exercised against the sandbox**,
+only against fabricated unit test values. `GetCheckoutDomain` follows the
+identical `c.do()`-based pattern every other proven `Get*` method in this
+client already uses, so the risk is low, but this is an honest gap, not
+a silent claim of full coverage — pick this up for real confirmation the
+next time a checkout domain gets added to the sandbox account (via the
+dashboard, per the README's new "Checkout domains" section) rather than
+leaving it unconfirmed indefinitely. Docs regenerated
+(`examples/data-sources/paddle_checkout_domain/` added, `provider.go`'s
+`Description` updated to mention domain lookup without claiming a
+resource that doesn't exist).
 
 Implements: [[0007-v2-scope-discount-groups-and-notification-settings]].
 
