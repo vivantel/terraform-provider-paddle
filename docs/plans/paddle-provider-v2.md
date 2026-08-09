@@ -1,9 +1,10 @@
 ---
 title: Implementation plan — terraform-provider-paddle v2
-status: done — v0.2.0 released and confirmed live on the Terraform
-  Registry 2026-08-09 (PR #2 merged to master, both v0.1.0 and v0.2.0
-  present in registry.terraform.io/v1/providers/vivantel/paddle/versions,
-  all 5 resource/data-source doc pages present on the v0.2.0 record)
+status: done — v0.2.0 released 2026-08-09 (PR #2), then extended the same
+  day with the previously-deferred Step 6 (paddle_checkout_domain data
+  source, PR #3) and a post-release Registry smoke-test workflow (PR #4),
+  released together as v0.3.0. Both confirmed live on the Terraform
+  Registry via direct API check.
 date: 2026-08-08
 tags: [paddle, provider, plan, v2]
 ---
@@ -417,21 +418,24 @@ cleanly if there isn't one). `checkout_domain_data_source.go`: nested
 shape. `Read()` fetches only `id` — this model has Required non-pointer
 nested struct fields, the same class of fix `price_resource.go`'s
 `Read()` needed. Unit test for `fromAPICheckoutDomain`'s nested-field
-mapping. Acceptance test run against CI (PR #3, run 31299857928): this
-sandbox account has no checkout domain configured at all, so the test
-hit its own skip path (`ListCheckoutDomains` returned empty, `t.Skip`
-fired cleanly) — confirms that path works, but **the actual Get/lookup
-path against a real domain was not exercised against the sandbox**,
-only against fabricated unit test values. `GetCheckoutDomain` follows the
-identical `c.do()`-based pattern every other proven `Get*` method in this
-client already uses, so the risk is low, but this is an honest gap, not
-a silent claim of full coverage — pick this up for real confirmation the
-next time a checkout domain gets added to the sandbox account (via the
-dashboard, per the README's new "Checkout domains" section) rather than
-leaving it unconfirmed indefinitely. Docs regenerated
-(`examples/data-sources/paddle_checkout_domain/` added, `provider.go`'s
-`Description` updated to mention domain lookup without claiming a
-resource that doesn't exist).
+mapping. Acceptance test first run against CI (PR #3, run 31299857928)
+hit its own skip path — this sandbox account had no checkout domain
+configured at all (`ListCheckoutDomains` returned empty, `t.Skip` fired
+cleanly), so only the skip path and fabricated unit test values were
+confirmed, not the real Get/lookup path. **Closed the same day**: a
+checkout domain (`checkout.example.com`) was added to the sandbox via
+the dashboard (Checkout → Website approval → Domain approval — the
+manual step this data source depends on, documented in README.md's
+"Checkout domains" section), then CI run 31300168595 was manually
+re-triggered (`gh run rerun` on an existing `master` CI run, no new
+commit needed) and `TestAccPaddleCheckoutDomainDataSource_basic` passed
+for real this time (0.77s runtime, consistent with an actual HTTP round
+trip rather than the near-instant skip) — the real Get/lookup path,
+including the nested `payment_method_verification.apple_pay.status`
+mapping, is now confirmed against the real sandbox, not just asserted
+low-risk by analogy. Docs regenerated (`examples/data-sources/paddle_checkout_domain/`
+added, `provider.go`'s `Description` updated to mention domain lookup
+without claiming a resource that doesn't exist).
 
 Implements: [[0007-v2-scope-discount-groups-and-notification-settings]].
 
