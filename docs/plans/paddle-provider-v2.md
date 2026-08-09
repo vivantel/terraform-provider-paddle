@@ -275,7 +275,38 @@ resource built after all of them existed, apply every one from the start.
 
 ## Step 5: `paddle_notification_setting` resource + data source
 
-Status: not started
+Status: implemented, pending real-sandbox CI confirmation (pushed
+2026-08-09 — update this line once confirmed). Confirmed against the real
+API reference (not assumed) a shape asymmetry decision 0007 didn't call
+out: the create/update request's `subscribed_events` is an array of
+strings, but every response (create, update, get) returns it as an array
+of event objects (`{name, description, group, available_versions}`) —
+`client.NotificationSetting`/`NotificationSettingCreate`/
+`NotificationSettingUpdate` are three separate Go types because of this,
+not two. Also found `destination` is genuinely settable at update (not
+create-only as might be assumed by analogy with `type`), and the response
+carries `endpoint_secret_key` (webhook signing secret) — mapped to a
+`Sensitive: true` Computed attribute. `active` isn't accepted at create at
+all (Paddle always creates with `active: true`); `Create()` issues an
+immediate follow-up `UpdateNotificationSetting` call when the plan wants
+`active = false`, the only way to express that intent through this API —
+covered by a dedicated acceptance test
+(`TestAccPaddleNotificationSetting_activeFalseAtCreate`) rather than only
+incidentally by the basic test's later Update step, since it's the one
+piece of Create() logic no other resource in this provider has.
+`Delete()` calls the real `DeleteNotificationSetting` (hard DELETE, not
+archive-via-update); `CheckDestroy` asserts a 404 via `client.IsNotFound`
+rather than an `archived` status. Client wire-shape unit tests confirm
+`NotificationSettingCreate` never serializes `active` and
+`NotificationSettingUpdate` never serializes `type`, plus a response
+round-trip test for the object-array `subscribed_events` shape.
+`subscribed_events` isn't validated against Paddle's full event-type enum
+(40+ values) — documented in the schema description that Paddle's API is
+the source of truth, per Step 5 item 2's guidance. Sweeper added
+(`sweepNotificationSettings`, no "already archived" skip since this
+entity has no status field, only existence). Docs regenerated
+(`examples/{resources,data-sources}/paddle_notification_setting/` added,
+`provider.go`'s `Description` updated).
 
 Implements: [[0007-v2-scope-discount-groups-and-notification-settings]],
 same guardrail set as Step 4.

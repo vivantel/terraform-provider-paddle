@@ -650,3 +650,136 @@ func (c *Client) ListDiscountGroups(ctx context.Context) ([]DiscountGroup, error
 		after = env.Data[len(env.Data)-1].ID
 	}
 }
+
+// ── Notification Settings — https://developer.paddle.com/api-reference/notification-settings ─
+//
+// Unlike Product/Price/Discount/Discount Group, this entity has a real
+// hard DELETE endpoint (confirmed against the real API reference,
+// docs/decisions/0007) — no Archive*/statusPatch pattern applies here.
+//
+// The request and response shapes for subscribed_events genuinely differ
+// (confirmed against the real API reference, not assumed): a create/update
+// request sends it as a plain array of event type name strings, but every
+// response (create, update, and get) returns it as an array of event
+// objects ({name, description, group, available_versions}) — the same
+// asymmetry Price's product_id has between create and update, just on a
+// field's shape instead of a field's presence. NotificationSetting (the
+// response/entity shape) and NotificationSettingCreate/
+// NotificationSettingUpdate (the request shapes) are three separate types
+// because of this, not two — reusing one struct for both directions would
+// mean either the request sends objects Paddle rejects, or the response
+// fails to unmarshal into a []string field.
+
+type NotificationSettingEvent struct {
+	Name              string `json:"name"`
+	Description       string `json:"description,omitempty"`
+	Group             string `json:"group,omitempty"`
+	AvailableVersions []int  `json:"available_versions,omitempty"`
+}
+
+type NotificationSetting struct {
+	ID                     string                     `json:"id,omitempty"`
+	Description            string                     `json:"description"`
+	Type                   string                     `json:"type,omitempty"`
+	Destination            string                     `json:"destination"`
+	Active                 bool                       `json:"active,omitempty"`
+	APIVersion             int                        `json:"api_version,omitempty"`
+	IncludeSensitiveFields bool                       `json:"include_sensitive_fields,omitempty"`
+	TrafficSource          string                     `json:"traffic_source,omitempty"`
+	SubscribedEvents       []NotificationSettingEvent `json:"subscribed_events,omitempty"`
+	// EndpointSecretKey signs webhook payloads sent to this destination —
+	// genuinely sensitive, must never be logged (do() already never logs
+	// bodies at all, but this is also why the resource schema marks the
+	// matching attribute Sensitive).
+	EndpointSecretKey string `json:"endpoint_secret_key,omitempty"`
+}
+
+// NotificationSettingCreate is the POST body. No Active field at all —
+// confirmed against the real API reference, it's genuinely not accepted
+// at create (defaults true), only settable via a later update.
+type NotificationSettingCreate struct {
+	Description            string   `json:"description"`
+	Type                   string   `json:"type"`
+	Destination            string   `json:"destination"`
+	SubscribedEvents       []string `json:"subscribed_events"`
+	APIVersion             *int     `json:"api_version,omitempty"`
+	IncludeSensitiveFields *bool    `json:"include_sensitive_fields,omitempty"`
+	TrafficSource          string   `json:"traffic_source,omitempty"`
+}
+
+// NotificationSettingUpdate is the PATCH body. No Type field — confirmed
+// against the real API reference, it's immutable after create (same class
+// of fix as Price's product_id, caught before writing this resource rather
+// than after a sandbox crash). Active is present here, the only place it's
+// settable at all.
+type NotificationSettingUpdate struct {
+	Description            string   `json:"description"`
+	Destination            string   `json:"destination"`
+	Active                 *bool    `json:"active,omitempty"`
+	SubscribedEvents       []string `json:"subscribed_events"`
+	APIVersion             *int     `json:"api_version,omitempty"`
+	IncludeSensitiveFields *bool    `json:"include_sensitive_fields,omitempty"`
+	TrafficSource          string   `json:"traffic_source,omitempty"`
+}
+
+type notificationSettingEnvelope struct {
+	Data NotificationSetting `json:"data"`
+}
+
+func (c *Client) CreateNotificationSetting(ctx context.Context, ns NotificationSettingCreate) (*NotificationSetting, error) {
+	var env notificationSettingEnvelope
+	if err := c.do(ctx, http.MethodPost, "/notification-settings", ns, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) GetNotificationSetting(ctx context.Context, id string) (*NotificationSetting, error) {
+	var env notificationSettingEnvelope
+	if err := c.do(ctx, http.MethodGet, "/notification-settings/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) UpdateNotificationSetting(ctx context.Context, id string, ns NotificationSettingUpdate) (*NotificationSetting, error) {
+	var env notificationSettingEnvelope
+	if err := c.do(ctx, http.MethodPatch, "/notification-settings/"+id, ns, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// DeleteNotificationSetting is a real hard DELETE — unlike every other
+// entity this provider manages, there is no archive-via-update fallback
+// for this one. Whether a second DELETE on an already-deleted destination
+// 404s the same way the archive endpoints do (so IsNotFound tolerance
+// applies the same way) is confirmed against the real sandbox via this
+// resource's acceptance test CheckDestroy, not assumed to transfer over
+// from the archive pattern automatically.
+func (c *Client) DeleteNotificationSetting(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodDelete, "/notification-settings/"+id, nil, nil)
+}
+
+type notificationSettingListEnvelope struct {
+	Data []NotificationSetting `json:"data"`
+	Meta paginationMeta        `json:"meta"`
+}
+
+// ListNotificationSettings — see ListProducts' comment; same pagination
+// shape, same sweeper-only purpose.
+func (c *Client) ListNotificationSettings(ctx context.Context) ([]NotificationSetting, error) {
+	var all []NotificationSetting
+	after := ""
+	for {
+		var env notificationSettingListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/notification-settings", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}

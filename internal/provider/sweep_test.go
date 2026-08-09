@@ -71,6 +71,10 @@ func init() {
 		Dependencies: []string{"paddle_discount"},
 		F:            sweepDiscountGroups,
 	})
+	resource.AddTestSweepers("paddle_notification_setting", &resource.Sweeper{
+		Name: "paddle_notification_setting",
+		F:    sweepNotificationSettings,
+	})
 }
 
 func sweepProducts(_ string) error {
@@ -192,6 +196,32 @@ func sweepDiscountGroups(_ string) error {
 		}
 		if err := c.ArchiveDiscountGroup(ctx, g.ID); err != nil && !client.IsNotFound(err) {
 			log.Printf("[WARN] failed to archive leaked test discount group %s (%s): %s", g.ID, g.Name, err)
+		}
+	}
+	return nil
+}
+
+// sweepNotificationSettings has no "already archived" skip the other
+// sweepers have — this entity has no status field at all, only a real
+// DELETE (see client.DeleteNotificationSetting), so every matching object
+// still listed is, by definition, not yet cleaned up.
+func sweepNotificationSettings(_ string) error {
+	c := sweepClient()
+	if c == nil {
+		log.Printf("[WARN] paddle_notification_setting sweeper: PADDLE_API_KEY not set, skipping")
+		return nil
+	}
+	ctx := context.Background()
+	settings, err := c.ListNotificationSettings(ctx)
+	if err != nil {
+		return err
+	}
+	for _, ns := range settings {
+		if !isAccTestName(ns.Description) {
+			continue
+		}
+		if err := c.DeleteNotificationSetting(ctx, ns.ID); err != nil && !client.IsNotFound(err) {
+			log.Printf("[WARN] failed to delete leaked test notification setting %s (%s): %s", ns.ID, ns.Description, err)
 		}
 	}
 	return nil
