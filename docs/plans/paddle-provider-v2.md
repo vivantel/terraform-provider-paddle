@@ -481,7 +481,19 @@ decision doc each.
    rather than expecting it in commit messages alone.
 3. Terraform Registry provider logo/SVG — cosmetic, affects the Registry
    listing appearance once published. Lowest priority item in this whole
-   plan; do it last if at all.
+   plan; do it last if at all. **Checked directly against the live
+   Registry API 2026-08-09, not assumed**: `logo_url` on
+   `registry.terraform.io/v1/providers/vivantel/paddle/<version>` is
+   `https://avatars3.githubusercontent.com/vivantel` — the `vivantel`
+   GitHub organization's avatar image, pulled dynamically. There is no
+   logo/SVG file anywhere in this repo, and nothing a commit or CI job can
+   change here — this item was written on an unverified assumption that
+   turned out to be wrong. Changing it means uploading a new avatar image
+   in GitHub org settings (`github.com/organizations/vivantel/settings/profile`),
+   an account-level action outside this repo and outside anything `gh`'s
+   REST API exposes (GitHub has no public avatar-upload endpoint for
+   orgs or users). Not something to pick up as a future "code" task —
+   flag it to whoever administers the `vivantel` GitHub org instead.
 
 ---
 
