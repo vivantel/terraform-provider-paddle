@@ -15,7 +15,7 @@ terraform {
   required_providers {
     paddle = {
       source  = "vivantel/paddle"
-      version = "~> 0.1"
+      version = "~> 0.3"
     }
   }
 }
