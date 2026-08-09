@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0] - 2026-08-09
+
+### Added
+
+- `paddle_checkout_domain` data source — read-only lookup by ID. No matching resource: Paddle's API has no create or update operation for checkout domains at all (confirmed against the live API reference), a domain can only be added via the Paddle dashboard, so this provider only implements the lookup rather than an import-only resource whose `Create()` would always fail.
+
+### Changed
+
+- Post-release Terraform Registry smoke test (`.github/workflows/registry-smoke-test.yaml`) — confirms a released version actually installs and works via a real `terraform init` against `registry.terraform.io` and a real `apply`/`destroy` against the sandbox, since every other test in this repo builds the provider in-process from source and never exercises the published artifact itself.
+
+### Documentation
+
+- `README.md`'s Publishing section documents the new smoke-test step, and a new "Checkout domains" section explains the manual dashboard setup this data source depends on.
+
 ## [0.2.0] - 2026-08-09
 
 ### Added
