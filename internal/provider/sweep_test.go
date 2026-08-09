@@ -226,3 +226,42 @@ func sweepNotificationSettings(_ string) error {
 	}
 	return nil
 }
+
+// TestAccSweepNotificationSettings_DeletesLeakedTestObjects is the
+// real-DELETE counterpart to TestAccSweepProducts_ArchivesLeakedTestObjects
+// above: sweepProducts/sweepPrices/sweepDiscounts/sweepDiscountGroups all
+// share one mechanically-identical List-then-Archive pattern, already
+// exercised end to end by the Products case, but
+// sweepNotificationSettings is a genuinely different code path (List-then-
+// DELETE, no "already archived" skip) that deserved its own real-sandbox
+// check rather than being assumed correct by analogy.
+func TestAccSweepNotificationSettings_DeletesLeakedTestObjects(t *testing.T) {
+	testAccPreCheck(t)
+	c := newTestAccClient()
+	ctx := context.Background()
+
+	leaked, err := c.CreateNotificationSetting(ctx, client.NotificationSettingCreate{
+		Description:      "Acc Test Sweeper Leaked Notification Setting",
+		Type:             "url",
+		Destination:      "https://example.com/webhook/sweeper-leak",
+		SubscribedEvents: []string{"transaction.billed"},
+	})
+	if err != nil {
+		t.Fatalf("CreateNotificationSetting (leaked fixture): %v", err)
+	}
+	t.Cleanup(func() {
+		_ = c.DeleteNotificationSetting(ctx, leaked.ID) // best-effort; the sweeper itself is what's under test
+	})
+
+	if err := sweepNotificationSettings(""); err != nil {
+		t.Fatalf("sweepNotificationSettings: %v", err)
+	}
+
+	_, err = c.GetNotificationSetting(ctx, leaked.ID)
+	if err == nil {
+		t.Fatalf("notification setting %s still exists after sweep — sweeper did not clean it up", leaked.ID)
+	}
+	if !client.IsNotFound(err) {
+		t.Fatalf("GetNotificationSetting after sweep: %v", err)
+	}
+}
