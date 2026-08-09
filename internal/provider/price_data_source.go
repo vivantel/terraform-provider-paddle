@@ -93,7 +93,7 @@ func (d *PriceDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	}
 
 	if err := fromAPIPrice(*price, &config); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle price response", client.FriendlyErrorMessage(err))
+		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)

@@ -71,7 +71,7 @@ func (d *ProductDataSource) Read(ctx context.Context, req datasource.ReadRequest
 	}
 
 	if err := fromAPIProduct(*product, &config); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle product response", client.FriendlyErrorMessage(err))
+		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)

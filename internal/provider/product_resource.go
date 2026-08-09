@@ -165,7 +165,7 @@ func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	if err := fromAPIProduct(*created, &plan); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle product response", client.FriendlyErrorMessage(err))
+		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -197,7 +197,7 @@ func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, re
 	}
 
 	if err := fromAPIProduct(*product, &state); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle product response", client.FriendlyErrorMessage(err))
+		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -229,7 +229,7 @@ func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest
 	}
 
 	if err := fromAPIProduct(*updated, &plan); err != nil {
-		resp.Diagnostics.AddError("Error decoding Paddle product response", client.FriendlyErrorMessage(err))
+		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
