@@ -528,6 +528,41 @@ re-testing business logic, that's what the acceptance suite is for).
 Documented in `README.md`'s Publishing section alongside the existing
 release steps.
 
+## Follow-up: repo hygiene pass (2026-08-09, after v0.3.1)
+
+A "what else can improve this provider/process" review surfaced four more
+gaps, all done and confirmed the same day:
+
+- **Branch protection on `master`** — applied via the GitHub API (not a
+  commit): `build`/`lint`/`acceptance`/`docs` required and must be
+  up to date before merging, no force-push/deletion. `enforce_admins:
+  false` deliberately — protects PRs/contributors from merging red CI
+  without handcuffing legitimate maintainer judgment calls for the
+  repo owner.
+- **`.github/dependabot.yml`** (gomod + github-actions, weekly) — missing
+  entirely before. Enabling it immediately surfaced 15 real vulnerability
+  alerts (7 critical) on transitive dependencies
+  (`golang.org/x/crypto`/`x/net`, `google.golang.org/grpc`, all pulled in
+  solely via `terraform-plugin-testing`'s own graph, confirmed via `go mod
+  why` — dead code in the shipped binary, this provider makes no SSH/gRPC
+  calls itself, but fixed anyway since it was trivial). Also enabled
+  secret scanning, push protection, Dependabot security updates, and
+  private vulnerability reporting on the repo itself (all free for a
+  public repo).
+- **`SECURITY.md`** — minimal vulnerability disclosure policy pointing at
+  GitHub's private reporting flow.
+- **`.github/workflows/sweep.yaml`** — sweepers were proven correct
+  against the real sandbox (Step 3) but nothing ever invoked them
+  automatically, only manual `-sweep` runs or their own dedicated
+  verification tests. Weekly schedule + `workflow_dispatch`. Verified with
+  a real manual dispatch (run `31303823237`) before considering this
+  done, not assumed from the code alone: log confirms `-sweep=sandbox`
+  correctly put `TestMain` into sweep-only mode (no normal tests ran),
+  all 5 sweepers executed in the declared dependency order
+  (`paddle_price`→`paddle_product`, `paddle_discount`→`paddle_discount_group`,
+  `paddle_notification_setting`), each completed in under 200ms, overall
+  `ok`.
+
 ## Definition of done for this plan
 
 - Steps 0-5 marked `done`. Step 6 done or explicitly deferred with a
