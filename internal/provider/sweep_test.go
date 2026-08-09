@@ -83,13 +83,30 @@ func sweepProducts(_ string) error {
 		log.Printf("[WARN] paddle_product sweeper: PADDLE_API_KEY not set, skipping")
 		return nil
 	}
-	ctx := context.Background()
+	return sweepMatchingProducts(context.Background(), c, func(p client.Product) bool {
+		return p.Status != "archived" && isAccTestName(p.Name)
+	})
+}
+
+// sweepMatchingProducts does the actual list-then-archive work behind
+// sweepProducts, parameterized on which products to touch. sweepProducts
+// itself always passes the broad isAccTestName match (that's the point of
+// a sweeper — clean up anything leaked, regardless of which test run
+// created it), but a verification test needs to scope this to only the one
+// object *it* created: this package's acceptance tests run as `push` and
+// `pull_request` CI jobs concurrently against the same shared sandbox
+// account, so a verification test that invoked the broad match would race
+// with, and potentially clean up, a completely unrelated concurrent job's
+// still-in-progress fixture — confirmed the hard way when an equivalent
+// notification-setting version of this test did exactly that (see
+// TestAccSweepNotificationSettings_DeletesLeakedTestObjects's comment).
+func sweepMatchingProducts(ctx context.Context, c *client.Client, match func(client.Product) bool) error {
 	products, err := c.ListProducts(ctx)
 	if err != nil {
 		return err
 	}
 	for _, p := range products {
-		if p.Status == "archived" || !isAccTestName(p.Name) {
+		if !match(p) {
 			continue
 		}
 		if err := c.ArchiveProduct(ctx, p.ID); err != nil && !client.IsNotFound(err) {
@@ -121,13 +138,17 @@ func sweepPrices(_ string) error {
 	return nil
 }
 
-// TestAccSweepProducts_ArchivesLeakedTestObjects exercises the sweeper
-// logic directly (calling sweepProducts, not the `-sweep` CLI flag) against
-// the real sandbox: creates a product outside Terraform entirely — the
-// exact "leaked between test runs" scenario sweepers exist for — confirms
-// the sweeper archives it, and confirms an already-archived product it
-// deliberately leaves alone (sweepProducts must skip already-archived
-// objects, not just objects outside its naming convention).
+// TestAccSweepProducts_ArchivesLeakedTestObjects exercises the real
+// list-then-archive mechanics behind sweepProducts against the real
+// sandbox: creates a product outside Terraform entirely — the exact
+// "leaked between test runs" scenario sweepers exist for — confirms the
+// sweep archives it. Scoped to only this fixture's ID (via
+// sweepMatchingProducts, not sweepProducts itself) rather than the broad
+// isAccTestName match the real sweeper uses — see
+// sweepMatchingProducts' comment for why: this package's acceptance
+// tests run as concurrent CI jobs against one shared sandbox account, and
+// the broad match would risk touching another concurrent job's
+// in-progress fixture, not just this test's own.
 func TestAccSweepProducts_ArchivesLeakedTestObjects(t *testing.T) {
 	testAccPreCheck(t)
 	c := newTestAccClient()
@@ -141,11 +162,11 @@ func TestAccSweepProducts_ArchivesLeakedTestObjects(t *testing.T) {
 		t.Fatalf("CreateProduct (leaked fixture): %v", err)
 	}
 	t.Cleanup(func() {
-		_ = c.ArchiveProduct(ctx, leaked.ID) // best-effort; the sweeper itself is what's under test
+		_ = c.ArchiveProduct(ctx, leaked.ID) // best-effort; the sweep itself is what's under test
 	})
 
-	if err := sweepProducts(""); err != nil {
-		t.Fatalf("sweepProducts: %v", err)
+	if err := sweepMatchingProducts(ctx, c, func(p client.Product) bool { return p.ID == leaked.ID }); err != nil {
+		t.Fatalf("sweepMatchingProducts: %v", err)
 	}
 
 	got, err := c.GetProduct(ctx, leaked.ID)
@@ -153,7 +174,7 @@ func TestAccSweepProducts_ArchivesLeakedTestObjects(t *testing.T) {
 		t.Fatalf("GetProduct after sweep: %v", err)
 	}
 	if got.Status != "archived" {
-		t.Errorf("status after sweep = %q, want archived — sweeper did not clean up the leaked object", got.Status)
+		t.Errorf("status after sweep = %q, want archived — sweep did not clean up the leaked object", got.Status)
 	}
 }
 
@@ -201,23 +222,44 @@ func sweepDiscountGroups(_ string) error {
 	return nil
 }
 
-// sweepNotificationSettings has no "already archived" skip the other
-// sweepers have — this entity has no status field at all, only a real
-// DELETE (see client.DeleteNotificationSetting), so every matching object
-// still listed is, by definition, not yet cleaned up.
 func sweepNotificationSettings(_ string) error {
 	c := sweepClient()
 	if c == nil {
 		log.Printf("[WARN] paddle_notification_setting sweeper: PADDLE_API_KEY not set, skipping")
 		return nil
 	}
-	ctx := context.Background()
+	// sweepNotificationSettings has no "already archived" skip the other
+	// sweepers have — this entity has no status field at all, only a real
+	// DELETE (see client.DeleteNotificationSetting), so every matching
+	// object still listed is, by definition, not yet cleaned up.
+	return sweepMatchingNotificationSettings(context.Background(), c, func(ns client.NotificationSetting) bool {
+		return isAccTestName(ns.Description)
+	})
+}
+
+// sweepMatchingNotificationSettings does the actual list-then-delete work
+// behind sweepNotificationSettings, parameterized the same way
+// sweepMatchingProducts is and for the identical reason — see that
+// function's comment. This entity's sweep is the riskier of the two to
+// get this wrong for: DELETE is destructive in a way ArchiveProduct isn't
+// (a concurrent job's object doesn't just gain a status change, it
+// disappears entirely, turning that job's next `Read()` into a 404 and its
+// next plan into an unwanted "+create" instead of the expected no-op or
+// update) — confirmed directly: an earlier version of this file's
+// notification-setting verification test called sweepNotificationSettings
+// itself (the broad match) from within a `TestAcc`-gated test, and a
+// concurrent `pull_request`-triggered CI job's
+// TestAccPaddleNotificationSetting_basic failed with exactly that "refresh
+// plan was not empty... + create" symptom, because this same commit's
+// concurrently-running `push`-triggered job's sweep test deleted it
+// mid-run.
+func sweepMatchingNotificationSettings(ctx context.Context, c *client.Client, match func(client.NotificationSetting) bool) error {
 	settings, err := c.ListNotificationSettings(ctx)
 	if err != nil {
 		return err
 	}
 	for _, ns := range settings {
-		if !isAccTestName(ns.Description) {
+		if !match(ns) {
 			continue
 		}
 		if err := c.DeleteNotificationSetting(ctx, ns.ID); err != nil && !client.IsNotFound(err) {
@@ -230,11 +272,15 @@ func sweepNotificationSettings(_ string) error {
 // TestAccSweepNotificationSettings_DeletesLeakedTestObjects is the
 // real-DELETE counterpart to TestAccSweepProducts_ArchivesLeakedTestObjects
 // above: sweepProducts/sweepPrices/sweepDiscounts/sweepDiscountGroups all
-// share one mechanically-identical List-then-Archive pattern, already
+// share one mechanically-identical list-then-archive shape, already
 // exercised end to end by the Products case, but
-// sweepNotificationSettings is a genuinely different code path (List-then-
+// sweepNotificationSettings is a genuinely different code path (list-then-
 // DELETE, no "already archived" skip) that deserved its own real-sandbox
-// check rather than being assumed correct by analogy.
+// check rather than being assumed correct by analogy. Scoped to only this
+// fixture's ID (via sweepMatchingNotificationSettings, not
+// sweepNotificationSettings itself) — see
+// sweepMatchingNotificationSettings' comment for the concrete failure this
+// scoping fixes.
 func TestAccSweepNotificationSettings_DeletesLeakedTestObjects(t *testing.T) {
 	testAccPreCheck(t)
 	c := newTestAccClient()
@@ -250,16 +296,17 @@ func TestAccSweepNotificationSettings_DeletesLeakedTestObjects(t *testing.T) {
 		t.Fatalf("CreateNotificationSetting (leaked fixture): %v", err)
 	}
 	t.Cleanup(func() {
-		_ = c.DeleteNotificationSetting(ctx, leaked.ID) // best-effort; the sweeper itself is what's under test
+		_ = c.DeleteNotificationSetting(ctx, leaked.ID) // best-effort; the sweep itself is what's under test
 	})
 
-	if err := sweepNotificationSettings(""); err != nil {
-		t.Fatalf("sweepNotificationSettings: %v", err)
+	match := func(ns client.NotificationSetting) bool { return ns.ID == leaked.ID }
+	if err := sweepMatchingNotificationSettings(ctx, c, match); err != nil {
+		t.Fatalf("sweepMatchingNotificationSettings: %v", err)
 	}
 
 	_, err = c.GetNotificationSetting(ctx, leaked.ID)
 	if err == nil {
-		t.Fatalf("notification setting %s still exists after sweep — sweeper did not clean it up", leaked.ID)
+		t.Fatalf("notification setting %s still exists after sweep — sweep did not clean it up", leaked.ID)
 	}
 	if !client.IsNotFound(err) {
 		t.Fatalf("GetNotificationSetting after sweep: %v", err)

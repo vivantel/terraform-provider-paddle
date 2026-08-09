@@ -191,11 +191,33 @@ same archive-not-delete pattern as the resources themselves) any
 non-archived object matching the naming convention; `paddle_product`
 declares `paddle_price` as a `Dependencies` entry so prices are swept
 first. Verified against the real sandbox not by invoking the `-sweep` CLI
-flag but by calling the sweeper function directly from a `TestAcc`-gated
+flag but by calling the sweep mechanics directly from a `TestAcc`-gated
 test (`TestAccSweepProducts_ArchivesLeakedTestObjects`, CI run confirmed
 below): creates a product outside Terraform entirely (the exact
-leaked-object scenario sweepers exist for), runs `sweepProducts`, confirms
-the object is archived afterward.
+leaked-object scenario sweepers exist for), runs the sweep, confirms
+the object is archived afterward. **Found during the pre-merge review
+pass, not during initial development:** the verification test originally
+called the real sweeper function directly (the broad `isAccTestName`
+match, same as a real `-sweep` invocation would use) — safe for the
+Products case (archiving doesn't remove the object, so a concurrent CI
+job's fixture just sees a status change), but the equivalent test added
+for Step 5's notification-setting sweeper called the same broad match
+against a real hard DELETE, and a concurrent `pull_request`-triggered CI
+job's `TestAccPaddleNotificationSetting_basic` failed with "refresh plan
+was not empty... + create" because this repo's `push` and `pull_request`
+jobs run concurrently against one shared sandbox account, and one job's
+broad sweep deleted the other job's still-in-progress fixture mid-test.
+Fixed by extracting `sweepMatchingProducts`/`sweepMatchingNotificationSettings`
+(list-then-archive/delete parameterized on a match predicate) so the real
+sweepers keep the broad match (that's the whole point, for real `-sweep`
+runs) while both verification tests scope themselves to only the exact ID
+they created — see `sweepMatchingNotificationSettings`' comment in
+`sweep_test.go` for the full account. `sweepPrices`/`sweepDiscounts`/
+`sweepDiscountGroups` don't have their own verification tests (same
+mechanically-identical archive shape as the already-covered Products
+case, lower incremental risk), so weren't refactored to the same
+parameterized shape — nothing currently calls them from inside a
+`TestAcc`-gated test, so they can't hit this specific race.
 
 Implements: [[0009-tflog-observability-and-acceptance-test-sweepers]].
 
