@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.1] - 2026-08-09
+
+### Fixed
+
+- Paddle API errors now surface a readable message (`error.detail`, with `error.code` in parentheses) in Terraform diagnostics instead of the raw JSON error envelope, across every resource and data source.
+- The `~> 0.1` version constraint shown in `README.md`, `examples/provider/provider.tf` (the source of `docs/index.md`'s example), and `examples/full-stack/main.tf` was still pinning copy-pasted configs to `0.1.x` after both `0.2.0` and `0.3.0` had shipped — bumped to `~> 0.3`.
+- `paddle_discount_group` and `paddle_notification_setting` were missing the `import.sh` example (and generated docs "Import" section) that `paddle_product`/`paddle_price`/`paddle_discount` already had.
+- An unchecked `resp.Body.Close()` error return in the API client, caught by a new lint pass.
+- A pre-tag review pass found the friendlier-error-message change above had also been applied to 8 call sites that decode a local `custom_data` field, never an actual API error — harmless (same fallback either way) but reverted for correctness.
+
+### Added
+
+- `examples/full-stack/main.tf` — a product, recurring price, discount group, discount, notification setting, and checkout domain lookup all wired together in one config, validated against the real provider schema, not just isolated single-resource snippets.
+- `golangci-lint` CI job.
+
+### Documentation
+
+- Added `docs/guardrails/example-version-constraints-track-latest-minor.md` so the version-constraint staleness above doesn't recur silently on the next minor release.
+
 ## [0.3.0] - 2026-08-09
 
 ### Added
