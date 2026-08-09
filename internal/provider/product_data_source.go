@@ -38,6 +38,7 @@ func (d *ProductDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 			"type":         schema.StringAttribute{Computed: true},
 			"image_url":    schema.StringAttribute{Computed: true},
 			"status":       schema.StringAttribute{Computed: true},
+			"custom_data":  schema.StringAttribute{Computed: true},
 		},
 	}
 }
@@ -69,6 +70,9 @@ func (d *ProductDataSource) Read(ctx context.Context, req datasource.ReadRequest
 		return
 	}
 
-	fromAPIProduct(*product, &config)
+	if err := fromAPIProduct(*product, &config); err != nil {
+		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &config)...)
 }

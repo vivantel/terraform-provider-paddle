@@ -31,6 +31,7 @@ output "product_name" {
 
 ### Read-Only
 
+- `custom_data` (String)
 - `description` (String)
 - `image_url` (String)
 - `name` (String)

@@ -32,6 +32,7 @@ output "price_amount" {
 ### Read-Only
 
 - `billing_cycle` (Attributes) Null for a one-time price. (see [below for nested schema](#nestedatt--billing_cycle))
+- `custom_data` (String)
 - `description` (String)
 - `name` (String)
 - `product_id` (String)

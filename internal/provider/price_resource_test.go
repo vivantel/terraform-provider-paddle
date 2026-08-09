@@ -67,7 +67,10 @@ func TestToAPIPrice_QuantityOmittedUnlessBothBoundsKnown(t *testing.T) {
 			m := baseModel()
 			m.Quantity = tc.quantity
 
-			got := toAPIPrice(m)
+			got, err := toAPIPrice(m)
+			if err != nil {
+				t.Fatalf("toAPIPrice: %v", err)
+			}
 
 			if (got.Quantity == nil) != tc.wantNil {
 				t.Fatalf("Quantity = %v, wantNil %v", got.Quantity, tc.wantNil)
@@ -88,7 +91,10 @@ func TestToAPIPrice_ClearingNameProducesNilPointer(t *testing.T) {
 	m := baseModel()
 	m.Name = types.StringNull()
 
-	got := toAPIPrice(m)
+	got, err := toAPIPrice(m)
+	if err != nil {
+		t.Fatalf("toAPIPrice: %v", err)
+	}
 
 	if got.Name != nil {
 		t.Errorf("Name = %q, want nil", *got.Name)
@@ -106,7 +112,10 @@ func TestToAPIPriceUpdate_NeverSendsProductID(t *testing.T) {
 	m := baseModel()
 	m.Name = types.StringValue("Renamed")
 
-	got := toAPIPriceUpdate(m)
+	got, err := toAPIPriceUpdate(m)
+	if err != nil {
+		t.Fatalf("toAPIPriceUpdate: %v", err)
+	}
 
 	b, err := json.Marshal(got)
 	if err != nil {
@@ -134,13 +143,15 @@ func TestFromAPIPrice_NilQuantityClearsStaleModelValue(t *testing.T) {
 		},
 	}
 
-	fromAPIPrice(client.Price{
+	if err := fromAPIPrice(client.Price{
 		ID:          "pri_1",
 		ProductID:   "pro_123",
 		Description: "internal desc",
 		UnitPrice:   client.Money{Amount: "1000", CurrencyCode: "USD"},
 		Quantity:    nil,
-	}, &m)
+	}, &m); err != nil {
+		t.Fatalf("fromAPIPrice: %v", err)
+	}
 
 	if m.Quantity != nil {
 		t.Errorf("Quantity = %+v, want nil (API response had no quantity, stale model value should be cleared)", m.Quantity)
@@ -149,12 +160,14 @@ func TestFromAPIPrice_NilQuantityClearsStaleModelValue(t *testing.T) {
 
 func TestFromAPIPrice_NilNameBecomesStringNull(t *testing.T) {
 	var m PriceResourceModel
-	fromAPIPrice(client.Price{
+	if err := fromAPIPrice(client.Price{
 		ID:          "pri_1",
 		ProductID:   "pro_123",
 		Description: "internal desc",
 		UnitPrice:   client.Money{Amount: "1000", CurrencyCode: "USD"},
-	}, &m)
+	}, &m); err != nil {
+		t.Fatalf("fromAPIPrice: %v", err)
+	}
 
 	if !m.Name.IsNull() {
 		t.Errorf("Name = %v, want null", m.Name)

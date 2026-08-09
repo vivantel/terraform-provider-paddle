@@ -47,6 +47,7 @@ resource "paddle_price" "monthly" {
 ### Optional
 
 - `billing_cycle` (Attributes) Omit for a one-time price. (see [below for nested schema](#nestedatt--billing_cycle))
+- `custom_data` (String) Arbitrary structured JSON data, e.g. `jsonencode({ internal_id = 123 })`. Compared semantically, not byte-for-byte — key ordering or whitespace differences between what you write and what Paddle echoes back won't produce a diff.
 - `name` (String) 1-150 characters. Customer-facing.
 - `quantity` (Attributes) Defaults to 1-100 if omitted. (see [below for nested schema](#nestedatt--quantity))
 - `tax_mode` (String) `account_setting` (default), `external`, `internal`, or `location`.

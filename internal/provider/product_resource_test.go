@@ -36,7 +36,10 @@ func TestToAPIProduct_ClearingOptionalFieldsProducesNilPointer(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := toAPIProduct(tc.model)
+			got, err := toAPIProduct(tc.model)
+			if err != nil {
+				t.Fatalf("toAPIProduct: %v", err)
+			}
 			if (got.Description == nil) != (tc.want == nil) {
 				t.Fatalf("Description nil-ness mismatch: got %v, want %v", got.Description, tc.want)
 			}
@@ -49,7 +52,9 @@ func TestToAPIProduct_ClearingOptionalFieldsProducesNilPointer(t *testing.T) {
 
 func TestFromAPIProduct_NilDescriptionBecomesStringNull(t *testing.T) {
 	var m ProductResourceModel
-	fromAPIProduct(client.Product{ID: "pro_1", Name: "Widget", TaxCategory: "standard"}, &m)
+	if err := fromAPIProduct(client.Product{ID: "pro_1", Name: "Widget", TaxCategory: "standard"}, &m); err != nil {
+		t.Fatalf("fromAPIProduct: %v", err)
+	}
 
 	if !m.Description.IsNull() {
 		t.Errorf("Description = %v, want null", m.Description)

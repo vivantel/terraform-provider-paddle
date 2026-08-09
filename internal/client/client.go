@@ -1,7 +1,7 @@
 // Package client is a minimal HTTP client for the Paddle Billing API
 // (https://developer.paddle.com/api-reference/overview). It only implements
-// the Products, Prices, and Discounts endpoints this provider currently
-// needs.
+// the Products, Prices, Discounts, and Discount Groups endpoints this
+// provider currently needs.
 package client
 
 import (
@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 const (
@@ -97,6 +99,13 @@ func IsNotFound(err error) bool {
 // Any other non-2xx status, or the final attempt's failure, returns
 // *APIError unchanged — callers that check for a 404 via IsNotFound (see
 // every resource's Read()/Delete()) don't need to change.
+//
+// Logs at tflog.Debug level (visible via TF_LOG=debug) — method, path,
+// attempt number, and response status only. Request/response bodies are
+// deliberately never logged: custom_data or other fields may contain data
+// a user considers sensitive, and the API key must never appear in a log
+// line at any level (it's set as a header directly on req, never passed
+// to a logging call).
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, retryOverallBudget)
 	defer cancel()
@@ -125,6 +134,12 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 			reqBody = bytes.NewReader(bodyBytes)
 		}
 
+		tflog.Debug(ctx, "paddle: sending request", map[string]any{
+			"method":  method,
+			"path":    path,
+			"attempt": attempt,
+		})
+
 		req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reqBody)
 		if err != nil {
 			return fmt.Errorf("build request: %w", err)
@@ -137,6 +152,9 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 			// Transport-level errors (DNS, connection refused, context
 			// cancellation) aren't retried — only HTTP responses we can
 			// actually inspect a status code on are.
+			tflog.Debug(ctx, "paddle: request failed before a response", map[string]any{
+				"method": method, "path": path, "attempt": attempt, "error": err.Error(),
+			})
 			return fmt.Errorf("do request: %w", err)
 		}
 
@@ -145,6 +163,10 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		if err != nil {
 			return fmt.Errorf("read response body: %w", err)
 		}
+
+		tflog.Debug(ctx, "paddle: received response", map[string]any{
+			"method": method, "path": path, "attempt": attempt, "status": resp.StatusCode,
+		})
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			apiErr := &APIError{StatusCode: resp.StatusCode, Body: string(respBody)}
@@ -238,6 +260,26 @@ func parseRetryAfter(header string) (time.Duration, bool) {
 	return 0, false
 }
 
+// paginationMeta is the shared shape of Paddle list endpoints' `meta`
+// object (docs/decisions/0009 — only the `has_more` field is needed here,
+// per_page/estimated_total/next aren't used by anything in this client).
+type paginationMeta struct {
+	Pagination struct {
+		HasMore bool `json:"has_more"`
+	} `json:"pagination"`
+}
+
+// listPath builds a list-endpoint path with Paddle's `after` cursor
+// (the ID of the last item from the previous page) and a large per_page to
+// minimize round trips — used only by List* methods below, all of which
+// exist for acceptance test sweepers, not resource/data-source CRUD.
+func listPath(base, after string) string {
+	if after == "" {
+		return base + "?per_page=200"
+	}
+	return base + "?per_page=200&after=" + after
+}
+
 // ── Products — https://developer.paddle.com/api-reference/products ─────────
 
 type Product struct {
@@ -297,6 +339,31 @@ func (c *Client) UpdateProduct(ctx context.Context, id string, p Product) (*Prod
 // is the only supported removal. Terraform Delete calls this.
 func (c *Client) ArchiveProduct(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPatch, "/products/"+id, statusPatch{Status: "archived"}, nil)
+}
+
+type productListEnvelope struct {
+	Data []Product      `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+// ListProducts fetches every product, paging through Paddle's cursor-based
+// pagination (docs/decisions/0009's sweeper support — nothing else in this
+// provider needs a full listing today). Not used by any resource/data
+// source, only by acceptance test sweepers.
+func (c *Client) ListProducts(ctx context.Context) ([]Product, error) {
+	var all []Product
+	after := ""
+	for {
+		var env productListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/products", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
 }
 
 // ── Prices — https://developer.paddle.com/api-reference/prices ─────────────
@@ -388,6 +455,29 @@ func (c *Client) ArchivePrice(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPatch, "/prices/"+id, statusPatch{Status: "archived"}, nil)
 }
 
+type priceListEnvelope struct {
+	Data []Price        `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+// ListPrices — see ListProducts' comment; same pagination shape, same
+// sweeper-only purpose.
+func (c *Client) ListPrices(ctx context.Context) ([]Price, error) {
+	var all []Price
+	after := ""
+	for {
+		var env priceListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/prices", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
 // ── Discounts — https://developer.paddle.com/api-reference/discounts ───────
 //
 // Field list and update-immutability confirmed directly against
@@ -470,4 +560,226 @@ func (c *Client) UpdateDiscount(ctx context.Context, id string, d Discount) (*Di
 // (see statusPatch) in one place — it does not hit a different endpoint.
 func (c *Client) ArchiveDiscount(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPatch, "/discounts/"+id, statusPatch{Status: "archived"}, nil)
+}
+
+type discountListEnvelope struct {
+	Data []Discount     `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+// ListDiscounts — see ListProducts' comment; same pagination shape, same
+// sweeper-only purpose.
+func (c *Client) ListDiscounts(ctx context.Context) ([]Discount, error) {
+	var all []Discount
+	after := ""
+	for {
+		var env discountListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/discounts", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
+// ── Discount Groups — https://developer.paddle.com/api-reference/discount-groups ─
+
+type DiscountGroup struct {
+	ID     string `json:"id,omitempty"`
+	Name   string `json:"name"`
+	Status string `json:"status,omitempty"`
+}
+
+type discountGroupEnvelope struct {
+	Data DiscountGroup `json:"data"`
+}
+
+func (c *Client) CreateDiscountGroup(ctx context.Context, g DiscountGroup) (*DiscountGroup, error) {
+	var env discountGroupEnvelope
+	if err := c.do(ctx, http.MethodPost, "/discount-groups", g, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) GetDiscountGroup(ctx context.Context, id string) (*DiscountGroup, error) {
+	var env discountGroupEnvelope
+	if err := c.do(ctx, http.MethodGet, "/discount-groups/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) UpdateDiscountGroup(ctx context.Context, id string, g DiscountGroup) (*DiscountGroup, error) {
+	var env discountGroupEnvelope
+	if err := c.do(ctx, http.MethodPatch, "/discount-groups/"+id, g, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// Same story as Product/Price/Discount — no separate delete operation,
+// archiving via update is the only removal path (confirmed against the
+// real API reference, docs/decisions/0007).
+func (c *Client) ArchiveDiscountGroup(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodPatch, "/discount-groups/"+id, statusPatch{Status: "archived"}, nil)
+}
+
+type discountGroupListEnvelope struct {
+	Data []DiscountGroup `json:"data"`
+	Meta paginationMeta  `json:"meta"`
+}
+
+// ListDiscountGroups — see ListProducts' comment; same pagination shape,
+// same sweeper-only purpose.
+func (c *Client) ListDiscountGroups(ctx context.Context) ([]DiscountGroup, error) {
+	var all []DiscountGroup
+	after := ""
+	for {
+		var env discountGroupListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/discount-groups", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
+// ── Notification Settings — https://developer.paddle.com/api-reference/notification-settings ─
+//
+// Unlike Product/Price/Discount/Discount Group, this entity has a real
+// hard DELETE endpoint (confirmed against the real API reference,
+// docs/decisions/0007) — no Archive*/statusPatch pattern applies here.
+//
+// The request and response shapes for subscribed_events genuinely differ
+// (confirmed against the real API reference, not assumed): a create/update
+// request sends it as a plain array of event type name strings, but every
+// response (create, update, and get) returns it as an array of event
+// objects ({name, description, group, available_versions}) — the same
+// asymmetry Price's product_id has between create and update, just on a
+// field's shape instead of a field's presence. NotificationSetting (the
+// response/entity shape) and NotificationSettingCreate/
+// NotificationSettingUpdate (the request shapes) are three separate types
+// because of this, not two — reusing one struct for both directions would
+// mean either the request sends objects Paddle rejects, or the response
+// fails to unmarshal into a []string field.
+
+type NotificationSettingEvent struct {
+	Name              string `json:"name"`
+	Description       string `json:"description,omitempty"`
+	Group             string `json:"group,omitempty"`
+	AvailableVersions []int  `json:"available_versions,omitempty"`
+}
+
+type NotificationSetting struct {
+	ID                     string                     `json:"id,omitempty"`
+	Description            string                     `json:"description"`
+	Type                   string                     `json:"type,omitempty"`
+	Destination            string                     `json:"destination"`
+	Active                 bool                       `json:"active,omitempty"`
+	APIVersion             int                        `json:"api_version,omitempty"`
+	IncludeSensitiveFields bool                       `json:"include_sensitive_fields,omitempty"`
+	TrafficSource          string                     `json:"traffic_source,omitempty"`
+	SubscribedEvents       []NotificationSettingEvent `json:"subscribed_events,omitempty"`
+	// EndpointSecretKey signs webhook payloads sent to this destination —
+	// genuinely sensitive, must never be logged (do() already never logs
+	// bodies at all, but this is also why the resource schema marks the
+	// matching attribute Sensitive).
+	EndpointSecretKey string `json:"endpoint_secret_key,omitempty"`
+}
+
+// NotificationSettingCreate is the POST body. No Active field at all —
+// confirmed against the real API reference, it's genuinely not accepted
+// at create (defaults true), only settable via a later update.
+type NotificationSettingCreate struct {
+	Description            string   `json:"description"`
+	Type                   string   `json:"type"`
+	Destination            string   `json:"destination"`
+	SubscribedEvents       []string `json:"subscribed_events"`
+	APIVersion             *int     `json:"api_version,omitempty"`
+	IncludeSensitiveFields *bool    `json:"include_sensitive_fields,omitempty"`
+	TrafficSource          string   `json:"traffic_source,omitempty"`
+}
+
+// NotificationSettingUpdate is the PATCH body. No Type field — confirmed
+// against the real API reference, it's immutable after create (same class
+// of fix as Price's product_id, caught before writing this resource rather
+// than after a sandbox crash). Active is present here, the only place it's
+// settable at all.
+type NotificationSettingUpdate struct {
+	Description            string   `json:"description"`
+	Destination            string   `json:"destination"`
+	Active                 *bool    `json:"active,omitempty"`
+	SubscribedEvents       []string `json:"subscribed_events"`
+	APIVersion             *int     `json:"api_version,omitempty"`
+	IncludeSensitiveFields *bool    `json:"include_sensitive_fields,omitempty"`
+	TrafficSource          string   `json:"traffic_source,omitempty"`
+}
+
+type notificationSettingEnvelope struct {
+	Data NotificationSetting `json:"data"`
+}
+
+func (c *Client) CreateNotificationSetting(ctx context.Context, ns NotificationSettingCreate) (*NotificationSetting, error) {
+	var env notificationSettingEnvelope
+	if err := c.do(ctx, http.MethodPost, "/notification-settings", ns, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) GetNotificationSetting(ctx context.Context, id string) (*NotificationSetting, error) {
+	var env notificationSettingEnvelope
+	if err := c.do(ctx, http.MethodGet, "/notification-settings/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) UpdateNotificationSetting(ctx context.Context, id string, ns NotificationSettingUpdate) (*NotificationSetting, error) {
+	var env notificationSettingEnvelope
+	if err := c.do(ctx, http.MethodPatch, "/notification-settings/"+id, ns, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// DeleteNotificationSetting is a real hard DELETE — unlike every other
+// entity this provider manages, there is no archive-via-update fallback
+// for this one. Whether a second DELETE on an already-deleted destination
+// 404s the same way the archive endpoints do (so IsNotFound tolerance
+// applies the same way) is confirmed against the real sandbox via this
+// resource's acceptance test CheckDestroy, not assumed to transfer over
+// from the archive pattern automatically.
+func (c *Client) DeleteNotificationSetting(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodDelete, "/notification-settings/"+id, nil, nil)
+}
+
+type notificationSettingListEnvelope struct {
+	Data []NotificationSetting `json:"data"`
+	Meta paginationMeta        `json:"meta"`
+}
+
+// ListNotificationSettings — see ListProducts' comment; same pagination
+// shape, same sweeper-only purpose.
+func (c *Client) ListNotificationSettings(ctx context.Context) ([]NotificationSetting, error) {
+	var all []NotificationSetting
+	after := ""
+	for {
+		var env notificationSettingListEnvelope
+		if err := c.do(ctx, http.MethodGet, listPath("/notification-settings", after), nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
 }

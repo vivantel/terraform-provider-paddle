@@ -53,6 +53,7 @@ func (d *DiscountDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 			"times_used":        schema.Int64Attribute{Computed: true},
 			"created_at":        schema.StringAttribute{Computed: true},
 			"updated_at":        schema.StringAttribute{Computed: true},
+			"custom_data":       schema.StringAttribute{Computed: true},
 		},
 	}
 }

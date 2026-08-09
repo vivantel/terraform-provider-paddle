@@ -30,6 +30,7 @@ resource "paddle_product" "example" {
 
 ### Optional
 
+- `custom_data` (String) Arbitrary structured JSON data, e.g. `jsonencode({ internal_id = 123 })`. Compared semantically, not byte-for-byte — key ordering or whitespace differences between what you write and what Paddle echoes back won't produce a diff.
 - `description` (String)
 - `image_url` (String) Must be a publicly accessible HTTPS URL.
 - `type` (String) `standard` or `custom`. Defaults to `standard`.

@@ -195,3 +195,86 @@ func assertJSONEqual(t *testing.T, got []byte, want string) {
 		t.Errorf("JSON mismatch:\n got:  %s\n want: %s", got, want)
 	}
 }
+
+func TestDiscountGroupJSON_OnlyNameAndStatus(t *testing.T) {
+	// Discount Groups' create/update body is genuinely just these two
+	// fields (docs/decisions/0007) — this test exists to catch a future
+	// accidental field addition to the wire struct that Paddle's API
+	// doesn't accept, the same class of bug statusPatch was introduced to
+	// prevent for archive bodies.
+	g := DiscountGroup{Name: "VIP Customers"}
+	b, err := json.Marshal(g)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{"name":"VIP Customers"}`)
+}
+
+func TestNotificationSettingCreateJSON_NoActiveField(t *testing.T) {
+	// Active isn't accepted at create at all (confirmed against the real
+	// API reference) — NotificationSettingCreate must not have an Active
+	// field for a zero-value bool to accidentally send active: false.
+	ns := NotificationSettingCreate{
+		Description:      "Order events",
+		Type:             "url",
+		Destination:      "https://example.com/webhook",
+		SubscribedEvents: []string{"transaction.billed"},
+	}
+	b, err := json.Marshal(ns)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"active"`) {
+		t.Errorf("request body contains \"active\", want it entirely absent: %s", b)
+	}
+	assertJSONEqual(t, b, `{"description":"Order events","type":"url","destination":"https://example.com/webhook","subscribed_events":["transaction.billed"]}`)
+}
+
+func TestNotificationSettingUpdateJSON_NoTypeField(t *testing.T) {
+	// Type is immutable after create (confirmed against the real API
+	// reference) — NotificationSettingUpdate must not have a Type field.
+	active := false
+	ns := NotificationSettingUpdate{
+		Description:      "Order events",
+		Destination:      "https://example.com/webhook",
+		Active:           &active,
+		SubscribedEvents: []string{"transaction.billed"},
+	}
+	b, err := json.Marshal(ns)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"type"`) {
+		t.Errorf("request body contains \"type\", want it entirely absent: %s", b)
+	}
+	assertJSONEqual(t, b, `{"description":"Order events","destination":"https://example.com/webhook","active":false,"subscribed_events":["transaction.billed"]}`)
+}
+
+func TestNotificationSettingJSON_SubscribedEventsUnmarshalsFromResponseObjectShape(t *testing.T) {
+	// The response's subscribed_events is an array of event objects, not
+	// strings (confirmed against the real API reference) — this is the
+	// regression test for that asymmetry: if NotificationSetting ever
+	// reused the request's []string shape, unmarshaling a real Paddle
+	// response would fail outright, not silently misbehave.
+	body := `{
+		"id": "ntfset_1",
+		"description": "Order events",
+		"type": "url",
+		"destination": "https://example.com/webhook",
+		"active": true,
+		"subscribed_events": [
+			{"name": "transaction.billed", "description": "...", "group": "Transaction", "available_versions": [1]}
+		],
+		"endpoint_secret_key": "pdl_nsk_secret"
+	}`
+	var ns NotificationSetting
+	if err := json.Unmarshal([]byte(body), &ns); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(ns.SubscribedEvents) != 1 || ns.SubscribedEvents[0].Name != "transaction.billed" {
+		t.Errorf("SubscribedEvents = %+v, want one event named transaction.billed", ns.SubscribedEvents)
+	}
+	if ns.EndpointSecretKey != "pdl_nsk_secret" {
+		t.Errorf("EndpointSecretKey = %q, want pdl_nsk_secret", ns.EndpointSecretKey)
+	}
+}

@@ -35,6 +35,7 @@ output "discount_code" {
 - `code` (String)
 - `created_at` (String)
 - `currency_code` (String)
+- `custom_data` (String)
 - `description` (String)
 - `discount_group_id` (String)
 - `enabled_for_checkout` (Boolean)

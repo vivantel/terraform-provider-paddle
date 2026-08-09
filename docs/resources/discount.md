@@ -37,6 +37,7 @@ resource "paddle_discount" "launch_promo" {
 
 - `code` (String) 1-32 alphanumeric characters, case-insensitive. Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle auto-generates a code when this is omitted (e.g. "3268E6WW3W") rather than leaving it null, so modeling this as Optional-only produced "Provider produced inconsistent result after apply" on the very first real Create.
 - `currency_code` (String) ISO 4217 code. Required by Paddle's API when `type` is `flat` or `flat_per_seat`; not accepted for `percentage` — the API enforces this, not this schema.
+- `custom_data` (String) Arbitrary structured JSON data, e.g. `jsonencode({ internal_id = 123 })`. Compared semantically, not byte-for-byte — key ordering or whitespace differences between what you write and what Paddle echoes back won't produce a diff.
 - `discount_group_id` (String) Paddle discount group ID (`dsg_...`), if this discount belongs to one. A discount belongs to at most one group.
 - `enabled_for_checkout` (Boolean) Defaults to `true`.
 - `expires_at` (String) RFC 3339 date-time. Omit (or set null) for a discount that never expires.
