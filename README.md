@@ -120,3 +120,10 @@ provider_installation {
 5. Once the Registry has ingested it, `.github/workflows/registry-smoke-test.yaml` runs automatically (triggered by `release.yaml`'s completion) and confirms the *published* version actually installs and works: a real `terraform init` against `registry.terraform.io` (no `dev_overrides`), then a real `apply`/`destroy` of a `paddle_product` against the sandbox through the published binary — not just the in-process acceptance tests CI already runs on every push. Can also be run manually (`workflow_dispatch`, pass a version) to re-check an existing release.
 
 Steps 1-3 need your own registry account — not something that can be done from CI. See `docs/plans/paddle-provider-v1.md` (Step 0/Step 8) for the full history of what's been done and what's still open.
+
+## Ongoing health checks
+
+Two scheduled workflows run independently of any release or push, both against the real sandbox:
+
+- `.github/workflows/e2e.yaml` — daily (also `workflow_dispatch`), determines whichever version is *currently* latest on the Terraform Registry (not necessarily the one just released) and runs a real `terraform init`/`apply`/`plan`/`destroy` through the published binary against a small multi-resource config (`paddle_product` → `paddle_price`, `paddle_discount_group` → `paddle_discount`, `paddle_notification_setting`, plus a `paddle_product` data source lookup). Catches drift between releases — a Paddle API change, a Registry-side issue — that `registry-smoke-test.yaml` (which only runs once, right after a release) wouldn't. Doesn't cover `paddle_checkout_domain`: there's no real checkout domain ID reliably available in CI.
+- `.github/workflows/sweep.yaml` — weekly (also `workflow_dispatch`), cleans up any sandbox object a crashed/timed-out CI run left behind.
