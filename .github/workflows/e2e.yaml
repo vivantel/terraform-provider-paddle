@@ -79,7 +79,14 @@ jobs:
           }
 
           resource "paddle_discount_group" "e2e" {
-            name = "E2E Published ${{ github.run_id }}"
+            # Paddle discount groups have no hard delete (destroy archives,
+            # not removes) and enforce unique names even against archived
+            # groups. github.run_id alone collides on a retry of the same
+            # run: attempt 1 creates+archives "E2E Published <run_id>",
+            # attempt 2 reuses the same run_id and fails with
+            # discount_group_name_conflict. run_attempt makes each retry's
+            # name unique too.
+            name = "E2E Published ${{ github.run_id }}-${{ github.run_attempt }}"
           }
 
           resource "paddle_discount" "e2e" {
