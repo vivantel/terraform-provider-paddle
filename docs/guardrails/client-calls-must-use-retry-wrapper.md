@@ -25,10 +25,23 @@ flakier than its siblings for no obvious reason.
 ## Applies to
 
 - `internal/provider/*_resource.go`, `internal/provider/*_data_source.go`
+- `internal/provider/actions/*.go` — actions must still go through
+  `internal/client.Client`, same as resources/data sources; see the
+  Exception below for the one way their usage differs.
 - Any future non-catalog resource added after v1, since the same client
   chokepoint should be extended rather than duplicated.
+
+## Exception
+
+Actions wrapping a Paddle endpoint that isn't safe to blindly repeat
+(refunds/credits, subscription cancel/pause/resume/charge) must **not**
+use this wrapper's automatic retry-on-5xx behavior unmodified — see
+`docs/guardrails/money-moving-actions-no-blanket-retry.md`. They still go
+through `internal/client.Client` (never a raw `http.Client`), just not
+through its default retry path.
 
 ## Related
 
 - [[0005-http-client-retry-backoff]]
+- `docs/guardrails/money-moving-actions-no-blanket-retry.md`
 - `docs/plans/paddle-provider-v1.md`
