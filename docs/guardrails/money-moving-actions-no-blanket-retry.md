@@ -53,17 +53,23 @@ protections, not just one:
      confirm at implementation time) before creating a new one. This is
      best-effort dedup, not a guarantee — document that limitation in the
      action's schema description rather than implying it's airtight.
-   - **`paddle_subscription_charge`**: resolved 2026-08-10 —
-     `create-subscription-charge`'s request body has a genuine
-     client-settable field, confirmed against the real API reference:
-     per-item `custom_data` (structured, echoed back) and `receipt_data`
-     (free text, `immediately`-only). Generate a deterministic key (a
-     hash of the invocation's own inputs, not a random UUID — actions
-     have no persisted state between invocations to store a random one
-     into), set it in `custom_data`, search recent transactions on the
-     subscription for that key before invoking. See
-     `docs/plans/paddle-provider-v3.md` Step 2 item 3 for the full
-     mechanism.
+   - **`paddle_subscription_charge`**: `custom_data` was initially thought
+     to be a universal fix for this one (see this guardrail's own prior
+     revision), but implementation-time research (2026-08-10) found
+     Paddle's `items` field actually has three variants, and
+     **`custom_data` only exists on the two non-catalog variants — not on
+     the catalog-price variant, which is the dominant real-world case and
+     the only one this provider's `paddle_subscription_charge` action
+     supports** (the other two variants were deliberately scoped out as
+     their own bigger schema-design task, not shipped half-modeled). The
+     shipped mechanism instead lists this subscription's
+     `origin=subscription_charge` transactions and matches on an exact
+     `price_id`+`quantity` item-set comparison — a **weaker** check than
+     a synthetic key would have been (two deliberately separate charges
+     for identical items are indistinguishable from a retry to this
+     check), documented as such in the action's own schema description.
+     See `docs/plans/paddle-provider-v3.md` Step 2 for the full account
+     of this correction.
 
 ## Why
 

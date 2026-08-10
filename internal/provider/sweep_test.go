@@ -79,6 +79,47 @@ func init() {
 		Name: "paddle_notification_setting",
 		F:    sweepNotificationSettings,
 	})
+	resource.AddTestSweepers("paddle_test_fixture_customer", &resource.Sweeper{
+		Name: "paddle_test_fixture_customer",
+		F:    sweepTestFixtureCustomers,
+	})
+}
+
+// isAccTestCustomerEmail is the Customer-specific equivalent of
+// isAccTestName — Customer has no name field at fixture-creation time
+// (see client.CreateCustomer), and an email local-part can't contain the
+// space isAccTestName's "acc test" substring relies on, so fixture
+// customer emails use "acctest" instead (see
+// action_paddle_adjustment_acc_test.go's fixture helper).
+func isAccTestCustomerEmail(email string) bool {
+	return strings.Contains(strings.ToLower(email), "acctest")
+}
+
+func sweepTestFixtureCustomers(_ string) error {
+	c := sweepClient()
+	if c == nil {
+		log.Printf("[WARN] paddle_test_fixture_customer sweeper: PADDLE_API_KEY not set, skipping")
+		return nil
+	}
+	ctx := context.Background()
+	customers, err := c.ListTestFixtureCustomers(ctx)
+	if err != nil {
+		return err
+	}
+	var matched, swept int
+	for _, cust := range customers {
+		if cust.Status == "archived" || !isAccTestCustomerEmail(cust.Email) {
+			continue
+		}
+		matched++
+		if err := c.ArchiveTestFixtureCustomer(ctx, cust.ID); err != nil && !client.IsNotFound(err) {
+			log.Printf("[WARN] failed to archive leaked test fixture customer %s (%s): %s", cust.ID, cust.Email, err)
+			continue
+		}
+		swept++
+	}
+	log.Printf("[INFO] paddle_test_fixture_customer sweeper: matched %d, swept %d", matched, swept)
+	return nil
 }
 
 func sweepProducts(_ string) error {

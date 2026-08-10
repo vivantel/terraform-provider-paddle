@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/hashicorp/terraform-plugin-framework/action"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -12,9 +13,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
+	"github.com/vivantel/terraform-provider-paddle/internal/provider/actions"
 )
 
 var _ provider.Provider = &PaddleProvider{}
+var _ provider.ProviderWithActions = &PaddleProvider{}
 
 type PaddleProvider struct {
 	// version is set by main.go at build time (see .goreleaser.yml);
@@ -40,7 +43,7 @@ func (p *PaddleProvider) Metadata(_ context.Context, _ provider.MetadataRequest,
 
 func (p *PaddleProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages Paddle Billing catalog resources (products, prices, discounts, discount groups, notification settings) and looks up checkout domains. Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
+		Description: "Manages Paddle Billing catalog resources (products, prices, discounts, discount groups, notification settings), looks up checkout domains, and provides actions for one-time lifecycle operations (adjustments, subscription cancel/pause/resume/charge) that don't have a resource lifecycle of their own. Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
 				MarkdownDescription: "Paddle API key. Can also be set via the `PADDLE_API_KEY` environment variable.",
@@ -101,6 +104,7 @@ func (p *PaddleProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	c := client.New(baseURL, apiKey)
 	resp.DataSourceData = c
 	resp.ResourceData = c
+	resp.ActionData = c
 }
 
 func (p *PaddleProvider) Resources(_ context.Context) []func() resource.Resource {
@@ -121,5 +125,21 @@ func (p *PaddleProvider) DataSources(_ context.Context) []func() datasource.Data
 		NewDiscountGroupDataSource,
 		NewNotificationSettingDataSource,
 		NewCheckoutDomainDataSource,
+	}
+}
+
+// Actions — the first this provider has ever had, see
+// docs/decisions/0010-v3-scope-lifecycle-actions.md for why these five
+// operations (a refund/credit, and four subscription lifecycle ops) are
+// modeled as actions rather than resources: each is a one-time,
+// irreversible "verb" against a Paddle entity with no real CRUD
+// lifecycle of its own to reconcile on a later plan.
+func (p *PaddleProvider) Actions(_ context.Context) []func() action.Action {
+	return []func() action.Action{
+		actions.NewAdjustmentAction,
+		actions.NewSubscriptionCancelAction,
+		actions.NewSubscriptionPauseAction,
+		actions.NewSubscriptionResumeAction,
+		actions.NewSubscriptionChargeAction,
 	}
 }
