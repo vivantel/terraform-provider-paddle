@@ -50,6 +50,16 @@ signs:
       - "${artifact}"
 
 release:
+  # Found the hard way, 2026-08-10: GoReleaser does NOT auto-detect a
+  # semver prerelease tag (e.g. v0.4.0-beta.1) and mark the GitHub Release
+  # as a prerelease unless told to — the default is "false" regardless of
+  # the tag's own semver shape. v0.4.0-beta.1 was published as a full
+  # release and had to be corrected after the fact (`gh release edit
+  # --prerelease`) before this was set. "auto" makes GoReleaser check the
+  # tag's own semver prerelease component itself, matching how every
+  # other release/prerelease consumer of this tag (Terraform's own `~>`
+  # constraint resolution, the Terraform Registry) already treats it.
+  prerelease: auto
   extra_files:
     - glob: "terraform-registry-manifest.json"
       name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
