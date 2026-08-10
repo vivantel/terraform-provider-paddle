@@ -37,14 +37,24 @@ jobs:
       - name: Determine latest published version
         id: version
         run: |
+          # Excludes prerelease versions (anything with a "-", e.g.
+          # "0.4.0-beta.1") from "latest" — this job tests whatever's
+          # currently the latest *stable* Registry version, matching how
+          # `terraform init`'s own version constraint resolution treats
+          # prereleases (never selected unless pinned to exactly).
+          # Without this exclusion, int(x) below crashes outright on a
+          # prerelease's non-numeric component the first time one exists
+          # in the Registry's version list — found and fixed 2026-08-10,
+          # ahead of this repo's first-ever prerelease tag, not after a
+          # real crash (see docs/plans/paddle-provider-v3.md).
           version=$(curl -sf https://registry.terraform.io/v1/providers/vivantel/paddle/versions \
             | python3 -c "
           import json, sys
-          versions = [v['version'] for v in json.load(sys.stdin)['versions']]
+          versions = [v['version'] for v in json.load(sys.stdin)['versions'] if '-' not in v['version']]
           key = lambda v: [int(x) for x in v.split('.')]
           print(sorted(versions, key=key)[-1])
           ")
-          echo "Latest published version: $version"
+          echo "Latest published stable version: $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Write e2e config
