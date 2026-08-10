@@ -1,0 +1,129 @@
+name: E2E (Published)
+
+# Periodic health check of whatever's *currently* live on the Terraform
+# Registry, independent of releases — distinct from
+# registry-smoke-test.yaml, which only verifies the version just
+# published, triggered once by release.yaml. This catches drift that
+# happens between releases: a Paddle API change, a Registry-side issue,
+# an expired cert — nothing else in this repo's CI would notice any of
+# those on a quiet week with no new tag.
+#
+# Exercises product → price → discount_group → discount →
+# notification_setting wired together (product_id/discount_group_id
+# references, matching examples/full-stack/main.tf's shape) plus a data
+# source read, through the real published binary — not the in-process
+# build every other test in this repo uses. Doesn't cover
+# paddle_checkout_domain: there's no real checkout domain ID reliably
+# available in CI (see examples/full-stack/main.tf's own placeholder
+# chedom_... — illustrative only), so faking one here would be checking
+# nothing, not narrowing coverage on purpose.
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # daily, 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+        # Same expired hc-install signing-key workaround as ci.yaml's
+        # acceptance/docs jobs and registry-smoke-test.yaml.
+
+      - name: Determine latest published version
+        id: version
+        run: |
+          version=$(curl -sf https://registry.terraform.io/v1/providers/vivantel/paddle/versions \
+            | python3 -c "
+          import json, sys
+          versions = [v['version'] for v in json.load(sys.stdin)['versions']]
+          key = lambda v: [int(x) for x in v.split('.')]
+          print(sorted(versions, key=key)[-1])
+          ")
+          echo "Latest published version: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Write e2e config
+        run: |
+          mkdir -p /tmp/e2e-published
+          cat > /tmp/e2e-published/main.tf <<EOF
+          terraform {
+            required_providers {
+              paddle = {
+                source  = "vivantel/paddle"
+                version = "${{ steps.version.outputs.version }}"
+              }
+            }
+          }
+
+          provider "paddle" {
+            environment = "sandbox"
+          }
+
+          resource "paddle_product" "e2e" {
+            name         = "E2E Published ${{ github.run_id }}"
+            tax_category = "standard"
+          }
+
+          resource "paddle_price" "e2e" {
+            product_id  = paddle_product.e2e.id
+            description = "E2E published check"
+            unit_price = {
+              amount        = "1000"
+              currency_code = "USD"
+            }
+          }
+
+          resource "paddle_discount_group" "e2e" {
+            name = "E2E Published ${{ github.run_id }}"
+          }
+
+          resource "paddle_discount" "e2e" {
+            type              = "percentage"
+            amount            = "10"
+            description       = "E2E published check"
+            discount_group_id = paddle_discount_group.e2e.id
+          }
+
+          resource "paddle_notification_setting" "e2e" {
+            description       = "E2E published check"
+            type              = "url"
+            destination       = "https://example.com/e2e-published/${{ github.run_id }}"
+            subscribed_events = ["transaction.billed"]
+          }
+
+          data "paddle_product" "lookup" {
+            id = paddle_product.e2e.id
+          }
+
+          output "looked_up_tax_category" {
+            value = data.paddle_product.lookup.tax_category
+          }
+          EOF
+
+      - name: terraform init (real Registry pull, latest published version)
+        working-directory: /tmp/e2e-published
+        run: terraform init
+
+      - name: terraform apply
+        working-directory: /tmp/e2e-published
+        run: terraform apply -auto-approve
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+
+      - name: terraform plan (confirm no drift immediately after apply)
+        working-directory: /tmp/e2e-published
+        run: terraform plan -detailed-exitcode
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+
+      - name: terraform destroy (cleanup)
+        if: always()
+        working-directory: /tmp/e2e-published
+        run: terraform destroy -auto-approve
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
