@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0-beta.1] - 2026-08-10
+
+### Added
+
+- Terraform actions — this provider's first — for imperative Paddle operations with no resource lifecycle of their own: `paddle_adjustment` (refund/credit) and `paddle_subscription_cancel`/`paddle_subscription_pause`/`paddle_subscription_resume`/`paddle_subscription_charge`. Requires Terraform `>= 1.14.0`. Since Paddle has no idempotency-key mechanism anywhere in its API, every action goes through a no-blind-retry client path and a search-before-invoke check before mutating, rather than the automatic retry every other client call gets — see the new "Actions" section in `README.md` for the operational risks (real money movement, no `-auto-approve` without review, a separately-scoped API key) before using these in an automated pipeline.
+- Daily `E2E (Published)` health-check workflow testing whatever's currently latest on the Terraform Registry, independent of any release.
+- Sweepers now log matched/swept counts, not just failures — a clean run previously proved nothing failed, not whether anything was found and cleaned.
+
+### Fixed
+
+- The `E2E (Published)` workflow's discount group naming collided with itself on a retry of the same run (`github.run_id` alone doesn't change across retries, and Paddle enforces discount group name uniqueness even against archived groups).
+- The `E2E (Published)` workflow's "latest version" resolution now excludes prerelease versions (like this release itself) — it previously crashed outright the moment a prerelease existed in the Registry's version list.
+- `paddle_adjustment`'s acceptance test now skips cleanly, rather than failing, when the sandbox account has no default payment link configured — a real Paddle-side precondition for creating any transaction via the API at all, found by running against the live sandbox.
+
+### Documentation
+
+- Captured the v3 roadmap (actions scope, idempotency guardrails, implementation plan) as durable project knowledge before writing any v3 code, continuing the same convention v1/v2 used. Includes a resolved investigation into retrofitting search-before-create onto existing catalog resources — concluded, after prototyping, that the obvious fix would trade a low-severity issue for a worse one (state corruption from misadopting an unrelated object), so no code change was made there.
+
+### Note
+
+This is a beta pre-release: the actions above are verified against the real Paddle sandbox for their core paths (adjustments' full invoke-twice-confirm-once proof; the always-available subscription error path), but the subscription actions' real success paths (pause/resume round-trip, charge) have not yet been exercised against a real sandbox subscription — Paddle subscriptions can only be created via an actual checkout with a test card, which this release's automation couldn't provision. Expect a stable `0.4.0` once that manual verification is done.
+
 ## [0.3.1] - 2026-08-09
 
 ### Fixed

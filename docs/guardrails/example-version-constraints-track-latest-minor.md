@@ -45,6 +45,14 @@ catch it.
 
 ## How to apply
 
+**Prerelease exception, added 2026-08-10**: don't bump on a prerelease
+(beta/rc) tag — `~> 0.4` does not match `0.4.0-beta.1` under Terraform's
+own constraint semantics (prereleases are excluded from `~>` resolution
+unless pinned exactly), so bumping the moment only a beta exists would
+break the copy-paste example for every stable-track user until the real
+stable minor ships, the opposite failure mode this guardrail exists to
+prevent. Wait for the actual stable tag (e.g. `0.4.0`) before bumping.
+
 Before tagging a new MINOR release (a PATCH release doesn't need this — the
 constraint should already cover it), grep for the old minor's constraint
 string across the three locations above and bump it, in the same PR/commit
