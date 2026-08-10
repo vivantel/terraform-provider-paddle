@@ -120,11 +120,16 @@ update/delete — was rejected).
     lower-severity version of the same underlying gap (no
     idempotency-key support means any retried `POST` can double-create),
     found already present in every `Create*` call shipped through v2.
-    Initially flagged as a deferred backlog item; pulled into this
-    version's scope the same day (`docs/plans/paddle-provider-v3.md`
-    Step 7) once checking each entity's real field list turned up a
-    concrete, low-effort mechanism for 4 of 5 entities — cheap enough
-    not to defer.
+    Investigated as `docs/plans/paddle-provider-v3.md` Step 7; resolved
+    by analysis rather than a code change once implementation surfaced
+    that the obvious fix (mirror search-before-invoke into `Create()`)
+    would either pollute user-facing `custom_data` or risk adopting an
+    unrelated coincidentally-matching object into Terraform state — a
+    worse problem than the one it would fix. Discount Groups turned out
+    to need no fix at all (Paddle already enforces server-side name
+    uniqueness, so the failure mode is a clear `409`, not a silent
+    duplicate); the remaining entities' gap is accepted as real but
+    low-severity.
 - `docs/guardrails/client-calls-must-use-retry-wrapper.md` gets a short
   exception note pointing at the new retry guardrail — the blanket
   "every call" language predates this decision and no longer holds

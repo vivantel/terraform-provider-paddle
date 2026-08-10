@@ -34,6 +34,14 @@ catch it.
 - `examples/provider/provider.tf` (the source of `docs/index.md`'s example).
 - `README.md`'s Usage section.
 - `examples/full-stack/main.tf` (or any future full-stack/guide example).
+- The same three locations' `required_version` constraint, not just
+  `required_providers`'s — added 2026-08-10
+  ([[0010-v3-scope-lifecycle-actions]]) alongside this provider's first
+  actions, which need Terraform `>= 1.14.0`. Lower-risk than the
+  `required_providers` case (a version floor only ever needs raising, never
+  a moving target tracking "latest minor"), but still worth a grep pass if
+  a future change raises the actual minimum Terraform version this
+  provider needs.
 
 ## How to apply
 

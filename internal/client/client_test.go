@@ -352,3 +352,183 @@ func TestFriendlyErrorMessage_UnwrapsWrappedAPIError(t *testing.T) {
 		t.Errorf("FriendlyErrorMessage = %q, want %q", got, "bad request")
 	}
 }
+
+func TestAdjustmentJSON_FullRequestShape(t *testing.T) {
+	amount := "500"
+	a := Adjustment{
+		Action:        "refund",
+		Type:          "partial",
+		TaxMode:       "internal",
+		TransactionID: "txn_01abc",
+		Reason:        "customer requested refund",
+		Items: []AdjustmentItem{
+			{ItemID: "txnitm_01abc", Type: "partial", Amount: &amount},
+		},
+	}
+	b, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	// ID and Status are read-only / Paddle-assigned — must never appear in
+	// a request body regardless of Go zero-value, same discipline every
+	// other entity's Create body already follows (see e.g. Discount's
+	// TimesUsed/CreatedAt/UpdatedAt).
+	if strings.Contains(string(b), `"id"`) || strings.Contains(string(b), `"status"`) {
+		t.Errorf("request body contains a read-only field, want id/status entirely absent: %s", b)
+	}
+	assertJSONEqual(t, b, `{
+		"action": "refund",
+		"type": "partial",
+		"tax_mode": "internal",
+		"transaction_id": "txn_01abc",
+		"reason": "customer requested refund",
+		"items": [{"item_id": "txnitm_01abc", "type": "partial", "amount": "500"}]
+	}`)
+}
+
+func TestAdjustmentJSON_FullTypeOmitsItemsAndAmount(t *testing.T) {
+	// A "full" adjustment needs no Items at all, and an Items entry of
+	// type "full" needs no Amount (Paddle's API reference: Amount is
+	// required only for partial-type items) — Amount's pointer+omitempty
+	// must actually omit, not send amount:"".
+	a := Adjustment{
+		Action:        "credit",
+		Type:          "full",
+		TransactionID: "txn_01abc",
+		Reason:        "goodwill credit",
+	}
+	b, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"items"`) {
+		t.Errorf("request body contains \"items\" for a full adjustment with none given, want it absent: %s", b)
+	}
+	assertJSONEqual(t, b, `{"action":"credit","type":"full","transaction_id":"txn_01abc","reason":"goodwill credit"}`)
+}
+
+func TestAdjustmentJSON_ResponseStatusUnmarshals(t *testing.T) {
+	body := `{
+		"id": "adj_01abc",
+		"action": "refund",
+		"type": "partial",
+		"transaction_id": "txn_01abc",
+		"reason": "customer requested refund",
+		"status": "approved"
+	}`
+	var a Adjustment
+	if err := json.Unmarshal([]byte(body), &a); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if a.Status != "approved" {
+		t.Errorf("Status = %q, want %q", a.Status, "approved")
+	}
+	if a.ID != "adj_01abc" {
+		t.Errorf("ID = %q, want %q", a.ID, "adj_01abc")
+	}
+}
+
+func TestSubscriptionCancelRequestJSON_OnlyEffectiveFrom(t *testing.T) {
+	req := SubscriptionCancelRequest{EffectiveFrom: "immediately"}
+	b, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{"effective_from":"immediately"}`)
+}
+
+func TestSubscriptionPauseRequestJSON_OmitsUnsetResumeAtAndOnResume(t *testing.T) {
+	req := SubscriptionPauseRequest{EffectiveFrom: "immediately"}
+	b, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), "resume_at") || strings.Contains(string(b), "on_resume") {
+		t.Errorf("request body = %s, want resume_at/on_resume both absent when unset (indefinite pause, Paddle's own on_resume default)", b)
+	}
+	assertJSONEqual(t, b, `{"effective_from":"immediately"}`)
+}
+
+func TestSubscriptionPauseRequestJSON_ResumeAtRoundTrips(t *testing.T) {
+	resumeAt := "2026-09-01T00:00:00Z"
+	req := SubscriptionPauseRequest{EffectiveFrom: "immediately", ResumeAt: &resumeAt, OnResume: "continue_existing_billing_period"}
+	b, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{"effective_from":"immediately","resume_at":"2026-09-01T00:00:00Z","on_resume":"continue_existing_billing_period"}`)
+}
+
+func TestSubscriptionResumeRequestJSON(t *testing.T) {
+	req := SubscriptionResumeRequest{EffectiveFrom: "immediately"}
+	b, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{"effective_from":"immediately"}`)
+}
+
+func TestSubscriptionChargeRequestJSON_OmitsUnsetReceiptData(t *testing.T) {
+	req := SubscriptionChargeRequest{
+		EffectiveFrom: "next_billing_period",
+		Items:         []SubscriptionChargeItem{{PriceID: "pri_1", Quantity: 2}},
+	}
+	b, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), "receipt_data") {
+		t.Errorf("request body = %s, want receipt_data absent when unset", b)
+	}
+	assertJSONEqual(t, b, `{"effective_from":"next_billing_period","items":[{"price_id":"pri_1","quantity":2}]}`)
+}
+
+func TestSubscriptionJSON_StatusUnmarshals(t *testing.T) {
+	body := `{"id":"sub_01abc","status":"paused"}`
+	var s Subscription
+	if err := json.Unmarshal([]byte(body), &s); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if s.Status != "paused" {
+		t.Errorf("Status = %q, want %q", s.Status, "paused")
+	}
+}
+
+func TestTransactionCreateJSON_ManualBilledFixtureShape(t *testing.T) {
+	req := TransactionCreate{
+		Items:          []TransactionCreateItem{{PriceID: "pri_1", Quantity: 1}},
+		CustomerID:     "ctm_1",
+		AddressID:      "add_1",
+		CollectionMode: "manual",
+		Status:         "billed",
+		BillingDetails: &BillingDetails{PaymentTerms: PaymentTerms{Interval: "day", Frequency: 14}},
+	}
+	b, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{
+		"items": [{"price_id":"pri_1","quantity":1}],
+		"customer_id": "ctm_1",
+		"address_id": "add_1",
+		"collection_mode": "manual",
+		"status": "billed",
+		"billing_details": {"payment_terms": {"interval": "day", "frequency": 14}}
+	}`)
+}
+
+func TestCustomerJSON_EmailOnly(t *testing.T) {
+	b, err := json.Marshal(Customer{Email: "acc-test@example.com"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{"email":"acc-test@example.com"}`)
+}
+
+func TestAddressJSON_CountryCodeOnly(t *testing.T) {
+	b, err := json.Marshal(Address{CountryCode: "US"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{"country_code":"US"}`)
+}

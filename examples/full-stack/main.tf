@@ -5,6 +5,12 @@
 # reference.
 
 terraform {
+  # >= 1.14.0 is required by this provider's actions — see
+  # docs/decisions/0010-v3-scope-lifecycle-actions.md. This example
+  # doesn't itself use one, but tracks the same floor as
+  # examples/provider/provider.tf for consistency.
+  required_version = ">= 1.14.0"
+
   required_providers {
     paddle = {
       source  = "vivantel/paddle"

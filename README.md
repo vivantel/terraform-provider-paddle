@@ -12,6 +12,10 @@ Pre-1.0 (`v0.2.x`), but every resource and data source is verified end-to-end ag
 
 ```hcl
 terraform {
+  # >= 1.14.0 is required by this provider's actions (paddle_adjustment,
+  # paddle_subscription_cancel/pause/resume/charge).
+  required_version = ">= 1.14.0"
+
   required_providers {
     paddle = {
       source  = "vivantel/paddle"
@@ -76,6 +80,43 @@ Full schema reference and more examples: [`docs/`](docs/index.md), or on the [Te
    ```
 
 There's nothing to `terraform import` either — this data source is read-only lookup, not lifecycle management, for exactly this entity type.
+
+### Actions — refunds, credits, and subscription lifecycle operations
+
+Terraform requires `>= 1.14.0` for this section — see the `required_version` constraint above.
+
+This provider exposes five [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) — imperative, one-time operations, not resources with a lifecycle Terraform reconciles on a later plan:
+
+- `paddle_adjustment` — creates a refund, credit, or chargeback-related adjustment against a transaction.
+- `paddle_subscription_cancel` / `paddle_subscription_pause` / `paddle_subscription_resume` / `paddle_subscription_charge` — subscription lifecycle operations. There's no `paddle_subscription` resource in this provider (subscriptions are checkout-created, not declared upfront — see `docs/decisions/0010-v3-scope-lifecycle-actions.md`), so each of these takes a plain `subscription_id` string rather than a resource reference.
+
+**⚠️ These move real money or change a real customer's live billing state.** Two things make them categorically higher-stakes than every resource this provider manages:
+
+1. **Paddle has no idempotency-key mechanism anywhere in its API** (confirmed directly against Paddle's own docs — no header, no dedup support of any kind). A network failure partway through one of these calls leaves the actual outcome genuinely ambiguous — the request may or may not have been processed. This provider does not blindly retry these calls (unlike every resource's `Create`/`Update`, which do retry on `429`/`5xx`) — an ambiguous failure surfaces as an explicit error telling you to check the Paddle dashboard or API directly for the real outcome **before manually re-running `terraform apply`**. Each action also checks for a matching prior invocation before acting (a status check for the subscription actions, a search for `paddle_adjustment`/`paddle_subscription_charge`) — but this is best-effort correlation, not a guarantee, especially for `paddle_subscription_charge` (see its own schema description for the known false-positive case: two deliberately separate charges for identical items are indistinguishable from a retry).
+2. **`terraform apply -auto-approve` gives these zero human review before they execute.** This repo's own `.github/workflows/e2e.yaml` uses `-auto-approve` throughout, and it's a common pattern in CI generally — but that pattern is a poor fit for a config that includes any of these five actions. If you use one in an automated pipeline, review the plan (`terraform plan` shows exactly what an action will do — invoke arguments included — before `apply`) or gate it behind a real approval step, rather than auto-approving blind.
+
+**Operational recommendation**: use a separate, more tightly-scoped Paddle API key for any configuration that includes these actions, distinct from the key used for catalog-management configs (`paddle_product`/`paddle_price`/etc.). Paddle API keys are account-wide by default; a key that can only be misused to create a duplicate `paddle_product` is a much smaller blast radius than one that can also issue refunds or cancel subscriptions.
+
+```hcl
+action "paddle_adjustment" "refund_order" {
+  config {
+    action         = "refund"
+    transaction_id = "txn_..."
+    reason         = "Customer requested refund"
+  }
+}
+
+resource "terraform_data" "trigger" {
+  lifecycle {
+    action_trigger {
+      events  = [after_create]
+      actions = [action.paddle_adjustment.refund_order]
+    }
+  }
+}
+```
+
+**Testing note**: this provider's own acceptance tests for the subscription actions (`cancel`/`pause`/`resume`/`charge`) can't self-provision a subscription fixture — Paddle subscriptions can only be created via a real checkout with a test card, no pure-API path exists, even in sandbox. If you're contributing to this provider, those tests skip cleanly unless the sandbox account already has a subscription in the relevant state (see `internal/provider/action_paddle_subscription_acc_test.go`); provisioning one via a real sandbox checkout is a manual, one-time step, same as `paddle_checkout_domain`'s dashboard-approval precondition above.
 
 ## Development
 

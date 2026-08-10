@@ -95,3 +95,71 @@ func TestListDiscounts_EmptyPageStopsWithoutInfiniteLoop(t *testing.T) {
 		t.Errorf("len(discounts) = %d, want 0", len(discounts))
 	}
 }
+
+func TestListAdjustments_FiltersByTransactionIDAndFollowsHasMoreCursor(t *testing.T) {
+	var transactionIDValues []string
+	var afterValues []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		transactionIDValues = append(transactionIDValues, r.URL.Query().Get("transaction_id"))
+		afterValues = append(afterValues, r.URL.Query().Get("after"))
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("after") == "" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []Adjustment{{ID: "adj_1", Action: "refund", TransactionID: "txn_1", Reason: "r"}},
+				"meta": map[string]any{"pagination": map[string]any{"has_more": true}},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []Adjustment{{ID: "adj_2", Action: "refund", TransactionID: "txn_1", Reason: "r"}},
+			"meta": map[string]any{"pagination": map[string]any{"has_more": false}},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-key")
+	adjustments, err := c.ListAdjustments(context.Background(), "txn_1")
+	if err != nil {
+		t.Fatalf("ListAdjustments: %v", err)
+	}
+	if len(adjustments) != 2 {
+		t.Fatalf("len(adjustments) = %d, want 2", len(adjustments))
+	}
+	for _, v := range transactionIDValues {
+		if v != "txn_1" {
+			t.Errorf("transaction_id query param = %q, want %q on every page request", v, "txn_1")
+		}
+	}
+	if len(afterValues) != 2 || afterValues[0] != "" || afterValues[1] != "adj_1" {
+		t.Errorf("after cursor values = %v, want [\"\", \"adj_1\"]", afterValues)
+	}
+}
+
+func TestListSubscriptionChargeTransactions_FiltersByOriginAndSubscriptionID(t *testing.T) {
+	var originValues, subIDValues []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		originValues = append(originValues, r.URL.Query().Get("origin"))
+		subIDValues = append(subIDValues, r.URL.Query().Get("subscription_id"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []Transaction{{ID: "txn_1", SubscriptionID: "sub_1", Origin: "subscription_charge"}},
+			"meta": map[string]any{"pagination": map[string]any{"has_more": false}},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-key")
+	txns, err := c.ListSubscriptionChargeTransactions(context.Background(), "sub_1")
+	if err != nil {
+		t.Fatalf("ListSubscriptionChargeTransactions: %v", err)
+	}
+	if len(txns) != 1 {
+		t.Fatalf("len(txns) = %d, want 1", len(txns))
+	}
+	if originValues[0] != "subscription_charge" {
+		t.Errorf("origin query param = %q, want %q", originValues[0], "subscription_charge")
+	}
+	if subIDValues[0] != "sub_1" {
+		t.Errorf("subscription_id query param = %q, want %q", subIDValues[0], "sub_1")
+	}
+}

@@ -1,4 +1,11 @@
 terraform {
+  # >= 1.14.0 is required by this provider's actions (paddle_adjustment,
+  # paddle_subscription_cancel/pause/resume/charge) — see
+  # docs/decisions/0010-v3-scope-lifecycle-actions.md. Declared explicitly
+  # rather than left implicit, since Terraform doesn't enforce an
+  # action-using provider's version floor on its own.
+  required_version = ">= 1.14.0"
+
   required_providers {
     paddle = {
       source  = "vivantel/paddle"
