@@ -118,6 +118,8 @@ resource "terraform_data" "trigger" {
 
 **Testing note**: this provider's own acceptance tests for the subscription actions (`cancel`/`pause`/`resume`/`charge`) can't self-provision a subscription fixture — Paddle subscriptions can only be created via a real checkout with a test card, no pure-API path exists, even in sandbox. If you're contributing to this provider, those tests skip cleanly unless the sandbox account already has a subscription in the relevant state (see `internal/provider/action_paddle_subscription_acc_test.go`); provisioning one via a real sandbox checkout is a manual, one-time step, same as `paddle_checkout_domain`'s dashboard-approval precondition above.
 
+`TestAccPaddleAdjustment_basic` self-provisions its own fixture transaction, but needs one manual, one-time sandbox account setting first, **found by running this test against the real sandbox** (2026-08-10, `feat/v3-lifecycle-actions` PR CI): Paddle rejects *any* transaction creation via the API — even a fully manual, non-checkout one — until the account has a default payment link set (Paddle dashboard → **Checkout** → your default pay link). Without it, this test skips cleanly with a message pointing here rather than failing.
+
 ## Development
 
 Requires Go 1.25+ (bumped from 1.22 on 2026-08-08 — see `docs/plans/paddle-provider-v1.md`'s resolved "Open question: bump the go version?").

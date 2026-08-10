@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/go-version"
@@ -62,6 +64,19 @@ func createAdjustmentFixtureTransaction(t *testing.T, c *client.Client) string {
 		BillingDetails: &client.BillingDetails{PaymentTerms: client.PaymentTerms{Interval: "day", Frequency: 14}},
 	})
 	if err != nil {
+		// A real, found-in-CI environmental precondition, not a code bug:
+		// this sandbox account has no default payment link configured —
+		// Paddle requires one before *any* transaction can be created via
+		// the API, even a fully manual, non-checkout one. Same class of
+		// one-time manual dashboard step as paddle_checkout_domain's
+		// domain-approval precondition (docs/plans/paddle-provider-v2.md
+		// Step 6) — skip cleanly rather than fail, so CI accurately
+		// reflects "blocked on account setup" instead of "code is
+		// broken", same distinction that precedent already established.
+		var apiErr *client.APIError
+		if errors.As(err, &apiErr) && strings.Contains(apiErr.Body, "transaction_default_checkout_url_not_set") {
+			t.Skip("this sandbox account has no default payment link set (Paddle dashboard → Checkout → your default payment link/pay link) — required before any transaction can be created via the API at all, even a manual one. Set it once, then this test's real success path will run. See README.md's Actions section.")
+		}
 		t.Fatalf("fixture CreateTransaction: %v", err)
 	}
 	return txn.ID

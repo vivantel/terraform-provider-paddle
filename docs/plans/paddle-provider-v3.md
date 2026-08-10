@@ -562,6 +562,24 @@ before `TestAccPaddleSubscriptionPauseResume_roundTrip`/
 `TestAccPaddleSubscriptionCharge_roundTrip` can confirm anything beyond
 "skips cleanly." Documented in Step 6's README section.
 
+**Second manual precondition, found the hard way**: the PR's real CI
+`acceptance` run (2026-08-10, `feat/v3-lifecycle-actions`) confirmed
+every subscription test skips cleanly as designed — and surfaced a real,
+unanticipated blocker for `TestAccPaddleAdjustment_basic`: Paddle
+rejects *any* transaction creation via the API — even the fully manual,
+non-checkout fixture this test builds — with
+`transaction_default_checkout_url_not_set` until the sandbox account has
+a default payment link configured (dashboard → Checkout → default pay
+link). Not documented anywhere in the API reference research this plan
+did beforehand; only surfaced by actually running against the real
+sandbox, exactly the class of finding `docs/decisions/0003-acceptance-tests-against-live-sandbox.md`
+exists to catch. Fixed by having the fixture helper skip cleanly with a
+clear message on this specific error code, same treatment as the
+subscription tests' missing-fixture case, rather than failing CI for an
+account-configuration reason unrelated to the code. Documented in
+`README.md`'s Actions section, right after the subscription-fixture
+note.
+
 `go build`/`go vet`/`gofmt -l .`/`go test -c` all clean; every new
 acceptance test confirmed to skip correctly (via `TF_ACC` or
 `PADDLE_API_KEY` gating, or its own dynamic lookup) when run locally
