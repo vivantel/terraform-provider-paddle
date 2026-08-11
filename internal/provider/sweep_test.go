@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 
@@ -187,12 +188,29 @@ func sweepTestFixtureCustomers(_ string) error {
 	if err != nil {
 		return err
 	}
-	var matched, swept, txnsSwept int
+	var matched, swept, txnsSwept, skippedTooRecent int
+	now := time.Now()
 	for _, cust := range customers {
 		if cust.Status == "archived" || !isAccTestCustomerEmail(cust.Email) {
 			continue
 		}
 		matched++
+		// Contention guard: this sweeper and the acceptance suite both
+		// run against the same live sandbox account with no
+		// coordination between them (found via a real question about
+		// this exact race, 2026-08-11) — a sweep that happens to run
+		// while an acceptance test is still mid-flight could otherwise
+		// archive/cancel a fixture that test hasn't finished using yet.
+		// Now largely a secondary safety net rather than the primary
+		// risk: every fixture-creation site using this sweeper's
+		// naming convention also cleans up via its own t.Cleanup as of
+		// this same fix (see createAdjustmentFixtureTransaction), so
+		// this guard mainly protects a run that's still in flight
+		// *when* a sweep happens to fire, not the common case anymore.
+		if tooRecentToSweep(cust.CreatedAt, now, sweepMinAge) {
+			skippedTooRecent++
+			continue
+		}
 		txns, err := c.ListTransactionsByCustomer(ctx, cust.ID)
 		if err != nil {
 			log.Printf("[WARN] failed to list transactions for leaked test fixture customer %s (%s): %s", cust.ID, cust.Email, err)
@@ -210,7 +228,7 @@ func sweepTestFixtureCustomers(_ string) error {
 		}
 		swept++
 	}
-	log.Printf("[INFO] paddle_test_fixture_customer sweeper: matched %d, swept %d, transactions canceled/credited %d", matched, swept, txnsSwept)
+	log.Printf("[INFO] paddle_test_fixture_customer sweeper: matched %d, swept %d, transactions canceled/credited %d, skipped as too recent %d", matched, swept, txnsSwept, skippedTooRecent)
 	return nil
 }
 
