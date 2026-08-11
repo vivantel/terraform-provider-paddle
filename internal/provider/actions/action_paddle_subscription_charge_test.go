@@ -1,7 +1,9 @@
 package actions
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
@@ -123,5 +125,23 @@ func TestFindMatchingScheduledCharge_EmptyPreviewItemsIsNoMatch(t *testing.T) {
 	want := []client.SubscriptionChargeItem{{PriceID: "pri_1", Quantity: 1}}
 	if findMatchingScheduledCharge(preview, want) {
 		t.Error("findMatchingScheduledCharge = true, want false — preview has no queued one-time charge")
+	}
+}
+
+func TestWaitOrDone_ReturnsFalseOnAlreadyCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	if waitOrDone(ctx, time.Second) {
+		t.Error("waitOrDone = true, want false — context already canceled")
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Errorf("waitOrDone took %v with an already-canceled context, want near-instant return", elapsed)
+	}
+}
+
+func TestWaitOrDone_ReturnsTrueAfterDelayElapses(t *testing.T) {
+	if !waitOrDone(context.Background(), time.Millisecond) {
+		t.Error("waitOrDone = false, want true — context not canceled, delay should just elapse")
 	}
 }

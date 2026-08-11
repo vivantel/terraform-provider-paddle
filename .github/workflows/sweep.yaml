@@ -34,3 +34,8 @@ jobs:
       - run: go test ./internal/provider/... -sweep=sandbox -v
         env:
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          # paddle_test_subscription_charge sweeper (real invoices left
+          # over from paddle_subscription_charge's acceptance test — see
+          # its own comment in sweep_test.go) needs this to know which
+          # subscription is the dedicated test fixture; no-ops without it.
+          PADDLE_TEST_SUBSCRIPTION_ID: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID }}

@@ -1507,6 +1507,47 @@ func (c *Client) CreateTransaction(ctx context.Context, t TransactionCreate) (*T
 	return &env.Data, nil
 }
 
+// ListTransactionsByCustomer / CancelTransaction / transactionCancelPatch:
+// sweeper support for the transactions CreateTransaction above produces.
+// These are real, permanent invoice records the moment they're created —
+// found the hard way, 2026-08-11: every sandbox run of
+// TestAccPaddleAdjustment_basic that got past fixture creation generated
+// a real notified invoice, with no cleanup path, because none existed
+// until now. A manually-collected transaction still in `draft`/`ready`/
+// `billed` can be canceled outright (`PATCH` `status: "canceled"` — see
+// https://developer.paddle.com/build/invoices/cancel-invoices); once
+// `completed` (paid) or `past_due`, canceling is no longer possible and
+// the only lever left is an adjustment (see sweepTestFixtureCustomers'
+// and sweepTestSubscriptionCharges' fallback-to-credit behavior in
+// internal/provider/sweep_test.go).
+func (c *Client) ListTransactionsByCustomer(ctx context.Context, customerID string) ([]Transaction, error) {
+	var all []Transaction
+	after := ""
+	for {
+		path := "/transactions?per_page=200&customer_id=" + url.QueryEscape(customerID)
+		if after != "" {
+			path += "&after=" + url.QueryEscape(after)
+		}
+		var env transactionListEnvelope
+		if err := c.do(ctx, http.MethodGet, path, nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
+type transactionCancelPatch struct {
+	Status string `json:"status"`
+}
+
+func (c *Client) CancelTransaction(ctx context.Context, id string) error {
+	return c.do(ctx, http.MethodPatch, "/transactions/"+id, transactionCancelPatch{Status: "canceled"}, nil)
+}
+
 // ListSubscriptions is used only by acceptance tests to find (or confirm
 // the absence of) an already-existing, manually/checkout-provisioned
 // subscription in the sandbox — subscriptions can't be created via pure

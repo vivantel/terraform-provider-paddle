@@ -163,3 +163,37 @@ func TestListSubscriptionChargeTransactions_FiltersByOriginAndSubscriptionID(t *
 		t.Errorf("subscription_id query param = %q, want %q", subIDValues[0], "sub_1")
 	}
 }
+
+func TestListTransactionsByCustomer_FiltersByCustomerIDAndFollowsHasMoreCursor(t *testing.T) {
+	var customerIDValues []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		customerIDValues = append(customerIDValues, r.URL.Query().Get("customer_id"))
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("after") == "" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []Transaction{{ID: "txn_1", Status: "billed"}},
+				"meta": map[string]any{"pagination": map[string]any{"has_more": true}},
+			})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []Transaction{{ID: "txn_2", Status: "completed"}},
+			"meta": map[string]any{"pagination": map[string]any{"has_more": false}},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-key")
+	txns, err := c.ListTransactionsByCustomer(context.Background(), "ctm_1")
+	if err != nil {
+		t.Fatalf("ListTransactionsByCustomer: %v", err)
+	}
+	if len(txns) != 2 {
+		t.Fatalf("len(txns) = %d, want 2", len(txns))
+	}
+	for _, v := range customerIDValues {
+		if v != "ctm_1" {
+			t.Errorf("customer_id query param = %q, want %q", v, "ctm_1")
+		}
+	}
+}

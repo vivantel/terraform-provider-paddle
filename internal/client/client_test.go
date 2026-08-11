@@ -609,3 +609,11 @@ func TestFriendlyErrorMessage_NoFieldErrorsUnchanged(t *testing.T) {
 		t.Errorf("FriendlyErrorMessage = %q, want %q", got, want)
 	}
 }
+
+func TestTransactionCancelPatchJSON_OnlyStatusField(t *testing.T) {
+	b, err := json.Marshal(transactionCancelPatch{Status: "canceled"})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	assertJSONEqual(t, b, `{"status":"canceled"}`)
+}

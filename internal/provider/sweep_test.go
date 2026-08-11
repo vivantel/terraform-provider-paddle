@@ -83,6 +83,10 @@ func init() {
 		Name: "paddle_test_fixture_customer",
 		F:    sweepTestFixtureCustomers,
 	})
+	resource.AddTestSweepers("paddle_test_subscription_charge", &resource.Sweeper{
+		Name: "paddle_test_subscription_charge",
+		F:    sweepTestSubscriptionCharges,
+	})
 }
 
 // isAccTestCustomerEmail is the Customer-specific equivalent of
@@ -93,6 +97,35 @@ func init() {
 // action_paddle_adjustment_acc_test.go's fixture helper).
 func isAccTestCustomerEmail(email string) bool {
 	return strings.Contains(strings.ToLower(email), "acctest")
+}
+
+// cancelOrCreditTransaction cleans up one real transaction/invoice record
+// left over from paddle_adjustment/paddle_subscription_charge's
+// acceptance-test fixtures — found necessary the hard way, 2026-08-11:
+// running those tests against the real sandbox generates real, permanent,
+// notified invoices (client.CreateTransaction/ChargeSubscription's own
+// comments have the full account). Still-outstanding transactions
+// (draft/ready/billed) get canceled outright — a real, permanent removal
+// of the obligation (see client.CancelTransaction's comment). Once
+// completed (paid) or past_due, canceling is no longer possible; falls
+// back to a full credit adjustment instead, which doesn't remove the
+// record but zeroes out what's owed. Treats a 404 from either path (the
+// transaction is already gone) as success, same tolerance every other
+// sweeper in this file already has for its own entity.
+func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txnID string) error {
+	if err := c.CancelTransaction(ctx, txnID); err == nil || client.IsNotFound(err) {
+		return nil
+	}
+	_, err := c.CreateAdjustment(ctx, client.Adjustment{
+		Action:        "credit",
+		Type:          "full",
+		TransactionID: txnID,
+		Reason:        "sweeper cleanup of a leaked test fixture transaction",
+	})
+	if client.IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 func sweepTestFixtureCustomers(_ string) error {
@@ -106,19 +139,68 @@ func sweepTestFixtureCustomers(_ string) error {
 	if err != nil {
 		return err
 	}
-	var matched, swept int
+	var matched, swept, txnsSwept int
 	for _, cust := range customers {
 		if cust.Status == "archived" || !isAccTestCustomerEmail(cust.Email) {
 			continue
 		}
 		matched++
+		txns, err := c.ListTransactionsByCustomer(ctx, cust.ID)
+		if err != nil {
+			log.Printf("[WARN] failed to list transactions for leaked test fixture customer %s (%s): %s", cust.ID, cust.Email, err)
+		}
+		for _, txn := range txns {
+			if err := cancelOrCreditTransaction(ctx, c, txn.ID); err != nil {
+				log.Printf("[WARN] failed to cancel/credit leaked test fixture transaction %s (customer %s): %s", txn.ID, cust.ID, err)
+				continue
+			}
+			txnsSwept++
+		}
 		if err := c.ArchiveTestFixtureCustomer(ctx, cust.ID); err != nil && !client.IsNotFound(err) {
 			log.Printf("[WARN] failed to archive leaked test fixture customer %s (%s): %s", cust.ID, cust.Email, err)
 			continue
 		}
 		swept++
 	}
-	log.Printf("[INFO] paddle_test_fixture_customer sweeper: matched %d, swept %d", matched, swept)
+	log.Printf("[INFO] paddle_test_fixture_customer sweeper: matched %d, swept %d, transactions canceled/credited %d", matched, swept, txnsSwept)
+	return nil
+}
+
+// sweepTestSubscriptionCharges cleans up real transactions
+// paddle_subscription_charge's acceptance test creates against
+// PADDLE_TEST_SUBSCRIPTION_ID (see findTestSubscription in
+// action_paddle_subscription_acc_test.go) — that subscription is by
+// definition a dedicated test fixture, so every subscription_charge
+// -origin transaction against it is swept unconditionally, no naming
+// filter needed (unlike every naming-convention-matched sweeper above).
+// No-ops (not an error) if PADDLE_TEST_SUBSCRIPTION_ID isn't set — there's
+// nothing to sweep without knowing which subscription is the test one.
+func sweepTestSubscriptionCharges(_ string) error {
+	c := sweepClient()
+	if c == nil {
+		log.Printf("[WARN] paddle_test_subscription_charge sweeper: PADDLE_API_KEY not set, skipping")
+		return nil
+	}
+	subID := os.Getenv("PADDLE_TEST_SUBSCRIPTION_ID")
+	if subID == "" {
+		log.Printf("[INFO] paddle_test_subscription_charge sweeper: PADDLE_TEST_SUBSCRIPTION_ID not set, nothing to sweep")
+		return nil
+	}
+	ctx := context.Background()
+	txns, err := c.ListSubscriptionChargeTransactions(ctx, subID)
+	if err != nil {
+		return err
+	}
+	var matched, swept int
+	for _, txn := range txns {
+		matched++
+		if err := cancelOrCreditTransaction(ctx, c, txn.ID); err != nil {
+			log.Printf("[WARN] failed to cancel/credit leaked subscription-charge transaction %s (subscription %s): %s", txn.ID, subID, err)
+			continue
+		}
+		swept++
+	}
+	log.Printf("[INFO] paddle_test_subscription_charge sweeper: matched %d, swept %d", matched, swept)
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -14,6 +15,33 @@ import (
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
 )
+
+// chargeSearchRetryAttempts/chargeSearchRetryDelay: read-after-write lag
+// mitigation. Found running this action for real, 2026-08-11: neither
+// search this action's duplicate-prevention relies on
+// (ListSubscriptionChargeTransactions, GetSubscriptionNextTransaction) is
+// guaranteed instant-consistent with the ChargeSubscription write that
+// precedes it — confirmed the hard way with a real duplicate charge
+// created seconds after the first, on the exact back-to-back-invocation
+// case this check exists for. A single immediate search-then-give-up
+// isn't enough; retry a few times with a short wait before concluding "no
+// match, proceed" to shrink (not eliminate — Paddle gives no consistency
+// guarantee here, so this remains best-effort) the race window.
+const (
+	chargeSearchRetryAttempts = 4
+	chargeSearchRetryDelay    = 3 * time.Second
+)
+
+// waitOrDone waits for d or returns false early if ctx is canceled/expires
+// first — never sleeps through a caller giving up.
+func waitOrDone(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}
 
 var _ action.Action = &SubscriptionChargeAction{}
 var _ action.ActionWithConfigure = &SubscriptionChargeAction{}
@@ -51,12 +79,14 @@ func (a *SubscriptionChargeAction) Schema(_ context.Context, _ action.SchemaRequ
 			"action yet, deliberately scoped out rather than half-modeled (docs/plans/paddle-provider-v3.md Step 2). Before " +
 			"charging, checks whether an equivalent charge already exists and treats a match as already-done — best-effort, " +
 			"**not a guarantee**: two deliberate, genuinely separate charges for the identical items would look identical to " +
-			"this check too (docs/guardrails/money-moving-actions-no-blanket-retry.md). The check itself differs by " +
-			"`effective_from`, since Paddle only creates a queryable transaction record for an `immediately` charge — a " +
-			"`next_billing_period` charge is checked against the subscription's next-renewal preview instead. **The " +
-			"`next_billing_period` path is implemented per Paddle's documented API shape but not yet confirmed against a " +
-			"real response** (2026-08-11: the preview didn't reliably reflect a just-queued charge quickly enough for a " +
-			"real-sandbox test to verify) — prefer `immediately` if you depend on this action's duplicate-prevention.",
+			"this check too, and neither of Paddle's own search mechanisms (list-transactions, the next-renewal preview) is " +
+			"guaranteed instant-consistent with a charge just created — confirmed the hard way, 2026-08-11, with a real " +
+			"duplicate charge created seconds after the first during testing. This check now retries a few times with a " +
+			"short wait before concluding \"no match, proceed\", which meaningfully shrinks but does not eliminate that " +
+			"race window (docs/guardrails/money-moving-actions-no-blanket-retry.md). The check itself differs by " +
+			"`effective_from`: an `immediately` charge is checked by searching transactions; a `next_billing_period` charge " +
+			"is checked against the subscription's next-renewal preview instead, since Paddle creates no queryable " +
+			"transaction for it until the subscription actually renews.",
 		Attributes: map[string]actionschema.Attribute{
 			"subscription_id": actionschema.StringAttribute{
 				Required:            true,
@@ -189,34 +219,63 @@ func (a *SubscriptionChargeAction) Invoke(ctx context.Context, req action.Invoke
 
 	// Two different, non-interchangeable searches depending on
 	// effective_from — see findMatchingScheduledCharge's comment for why
-	// a single search can't cover both.
+	// a single search can't cover both. Both retry
+	// (chargeSearchRetryAttempts/chargeSearchRetryDelay) to mitigate
+	// read-after-write lag on Paddle's side — see that const block's
+	// comment.
 	if effectiveFrom == "next_billing_period" {
-		preview, err := a.client.GetSubscriptionNextTransaction(ctx, subID)
-		if err != nil {
-			resp.Diagnostics.AddError("Error checking Paddle subscription's next transaction preview", client.FriendlyErrorMessage(err))
-			return
-		}
-		if findMatchingScheduledCharge(preview, wantItems) {
-			if resp.SendProgress != nil {
-				resp.SendProgress(action.InvokeProgressEvent{
-					Message: fmt.Sprintf("A one-time charge with these exact items is already queued for subscription %s's next renewal — not creating a duplicate.", subID),
-				})
+		for attempt := 1; attempt <= chargeSearchRetryAttempts; attempt++ {
+			preview, err := a.client.GetSubscriptionNextTransaction(ctx, subID)
+			if err != nil {
+				resp.Diagnostics.AddError("Error checking Paddle subscription's next transaction preview", client.FriendlyErrorMessage(err))
+				return
 			}
-			return
+			if findMatchingScheduledCharge(preview, wantItems) {
+				if resp.SendProgress != nil {
+					resp.SendProgress(action.InvokeProgressEvent{
+						Message: fmt.Sprintf("A one-time charge with these exact items is already queued for subscription %s's next renewal — not creating a duplicate.", subID),
+					})
+				}
+				return
+			}
+			if attempt < chargeSearchRetryAttempts {
+				if resp.SendProgress != nil {
+					resp.SendProgress(action.InvokeProgressEvent{
+						Message: fmt.Sprintf("No matching queued charge found on attempt %d/%d — waiting before retrying, in case Paddle's renewal preview hasn't caught up with a very recent charge yet.", attempt, chargeSearchRetryAttempts),
+					})
+				}
+				if !waitOrDone(ctx, chargeSearchRetryDelay) {
+					resp.Diagnostics.AddError("Timed out waiting to check Paddle subscription's next transaction preview", "The context was canceled or expired while retrying the duplicate-charge check. Not proceeding to charge — verify manually before retrying this action.")
+					return
+				}
+			}
 		}
 	} else {
-		existing, err := a.client.ListSubscriptionChargeTransactions(ctx, subID)
-		if err != nil {
-			resp.Diagnostics.AddError("Error searching existing Paddle subscription charges", client.FriendlyErrorMessage(err))
-			return
-		}
-		if match := findMatchingCharge(existing, wantItems); match != nil {
-			if resp.SendProgress != nil {
-				resp.SendProgress(action.InvokeProgressEvent{
-					Message: fmt.Sprintf("A one-time charge with these exact items already exists for subscription %s (%s, status=%s) — not creating a duplicate.", subID, match.ID, match.Status),
-				})
+		for attempt := 1; attempt <= chargeSearchRetryAttempts; attempt++ {
+			existing, err := a.client.ListSubscriptionChargeTransactions(ctx, subID)
+			if err != nil {
+				resp.Diagnostics.AddError("Error searching existing Paddle subscription charges", client.FriendlyErrorMessage(err))
+				return
 			}
-			return
+			if match := findMatchingCharge(existing, wantItems); match != nil {
+				if resp.SendProgress != nil {
+					resp.SendProgress(action.InvokeProgressEvent{
+						Message: fmt.Sprintf("A one-time charge with these exact items already exists for subscription %s (%s, status=%s) — not creating a duplicate.", subID, match.ID, match.Status),
+					})
+				}
+				return
+			}
+			if attempt < chargeSearchRetryAttempts {
+				if resp.SendProgress != nil {
+					resp.SendProgress(action.InvokeProgressEvent{
+						Message: fmt.Sprintf("No matching existing charge found on attempt %d/%d — waiting before retrying, in case Paddle's transaction search hasn't caught up with a very recent charge yet.", attempt, chargeSearchRetryAttempts),
+					})
+				}
+				if !waitOrDone(ctx, chargeSearchRetryDelay) {
+					resp.Diagnostics.AddError("Timed out waiting to search existing Paddle subscription charges", "The context was canceled or expired while retrying the duplicate-charge check. Not proceeding to charge — verify manually before retrying this action.")
+					return
+				}
+			}
 		}
 	}
 
