@@ -44,6 +44,23 @@ name: E2E (Published)
 # rather than failing a workflow that has no way to provision its own
 # subscription (subscriptions can only be created via a real checkout,
 # confirmed 2026-08-10 — see README.md).
+#
+# Pause and resume are applied via TWO SEPARATE `terraform apply`
+# invocations, not one apply with two action_trigger'd resources — found
+# the hard way, 2026-08-11, running this workflow for real: an earlier
+# version relied on `depends_on` between two resources in the same apply
+# to serialize their actions, on the (wrong) assumption that Terraform's
+# resource-dependency graph also serializes action_trigger execution
+# order. It doesn't, at least not as observed: the real run's log showed
+# both actions starting within 2ms of each other, both reading the
+# subscription's pre-pause "active" status before either mutated it —
+# resume's own idempotency check no-opped ("already active"), pause's
+# check also saw "active" and paused it, leaving the pinned subscription
+# stuck paused in the real sandbox. Two fully separate `terraform apply`
+# CLI invocations (as two GitHub Actions steps) really do serialize —
+# resume's process cannot start until pause's process has exited — so
+# this is the fix, not same-apply `depends_on`. See the comment on the
+# second `terraform apply` step below for the full account.
 
 on:
   schedule:
@@ -165,7 +182,7 @@ jobs:
           }
           EOF
 
-      - name: Append action coverage (pause/resume, if a pinned subscription is configured)
+      - name: Append pause action config (if a pinned subscription is configured)
         if: ${{ env.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
         run: |
           cat >> /tmp/e2e-published/main.tf <<EOF
@@ -177,44 +194,12 @@ jobs:
             }
           }
 
-          action "paddle_subscription_resume" "e2e" {
-            config {
-              subscription_id = "${PADDLE_TEST_SUBSCRIPTION_ID}"
-              effective_from   = "immediately"
-            }
-          }
-
-          # Two separate terraform_data resources, not one resource with
-          # both actions in a single action_trigger's actions list —
-          # found via code review: Terraform's own lifecycle.action_trigger
-          # reference calls actions only an "ordered list", without
-          # explicitly documenting that Terraform waits for one action to
-          # finish before starting the next within the same trigger.
-          # depends_on between two separate resources IS a documented,
-          # load-bearing guarantee (Terraform's standard dependency graph
-          # serializes apply order on it), so pause_trigger's own apply
-          # (including its after_create action) is guaranteed complete
-          # before resume_trigger's apply begins — this always leaves
-          # PADDLE_TEST_SUBSCRIPTION_ID back in active without relying on
-          # same-trigger action-list ordering semantics that aren't
-          # explicitly documented.
           resource "terraform_data" "pause_trigger" {
             input = "${{ github.run_id }}-${{ github.run_attempt }}"
             lifecycle {
               action_trigger {
                 events  = [after_create]
                 actions = [action.paddle_subscription_pause.e2e]
-              }
-            }
-          }
-
-          resource "terraform_data" "resume_trigger" {
-            input      = "${{ github.run_id }}-${{ github.run_attempt }}"
-            depends_on = [terraform_data.pause_trigger]
-            lifecycle {
-              action_trigger {
-                events  = [after_create]
-                actions = [action.paddle_subscription_resume.e2e]
               }
             }
           }
@@ -225,6 +210,59 @@ jobs:
         run: terraform init
 
       - name: terraform apply
+        working-directory: /tmp/e2e-published
+        run: terraform apply -auto-approve
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+
+      # Appended and applied as a genuinely separate `terraform apply`
+      # invocation, not folded into the config/apply above — found the
+      # hard way, 2026-08-11, running this workflow for real: an earlier
+      # version put pause and resume in the SAME apply, on two separate
+      # resources linked by `depends_on`, on the theory that Terraform's
+      # standard dependency graph would serialize their action_triggers.
+      # It didn't — the real run's log showed "Action started:
+      # action.paddle_subscription_pause.e2e" and "Action started:
+      # action.paddle_subscription_resume.e2e" within 2ms of each other,
+      # both reading the subscription's pre-pause "active" status before
+      # either mutated it, so resume's own idempotency check ("already
+      # active, not invoking again") no-opped while pause's check saw
+      # "active" too and paused it — leaving PADDLE_TEST_SUBSCRIPTION_ID
+      # stuck paused in the real sandbox, exactly the failure mode this
+      # step was supposed to prevent. depends_on serializes *resource*
+      # apply order; it does not serialize the actions attached to
+      # different resources' action_triggers, at least not as observed
+      # here. Two fully separate `terraform apply` CLI invocations *are*
+      # sequential — GitHub Actions steps run in order, and a second
+      # `terraform apply` process cannot start until this step's process
+      # has exited — so resume is only ever dispatched after pause's
+      # entire apply (action included) has already finished, no shared
+      # in-process action-scheduling involved at all.
+      - name: Append resume action config (if a pinned subscription is configured)
+        if: ${{ env.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
+        run: |
+          cat >> /tmp/e2e-published/main.tf <<EOF
+
+          action "paddle_subscription_resume" "e2e" {
+            config {
+              subscription_id = "${PADDLE_TEST_SUBSCRIPTION_ID}"
+              effective_from   = "immediately"
+            }
+          }
+
+          resource "terraform_data" "resume_trigger" {
+            input = "${{ github.run_id }}-${{ github.run_attempt }}"
+            lifecycle {
+              action_trigger {
+                events  = [after_create]
+                actions = [action.paddle_subscription_resume.e2e]
+              }
+            }
+          }
+          EOF
+
+      - name: terraform apply (resume — separate invocation, see comment above)
+        if: ${{ env.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
         working-directory: /tmp/e2e-published
         run: terraform apply -auto-approve
         env:
