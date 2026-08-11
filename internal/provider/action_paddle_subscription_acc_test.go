@@ -74,6 +74,48 @@ func findTestSubscription(t *testing.T, c *client.Client, status string) *client
 	return nil
 }
 
+// findCanceledTestSubscription is TestAccPaddleSubscriptionCancel_alreadyCanceledShortCircuits's
+// own lookup, deliberately separate from findTestSubscription — added
+// 2026-08-11, once PADDLE_TEST_SUBSCRIPTION_ID was pinned to a specific
+// subscription that TestAccPaddleSubscriptionPauseResume_roundTrip and
+// both charge tests need to stay `active`. Reusing findTestSubscription
+// with status="canceled" against that same pinned ID would never match
+// (it's never supposed to be canceled) and would silently defeat the
+// point of pinning it, so this test gets its own dedicated pin instead:
+// PADDLE_TEST_CANCELED_SUBSCRIPTION_ID, a second subscription
+// provisioned once via a real sandbox checkout and then canceled once by
+// hand — after that, it stays canceled forever (nothing in this test
+// suite ever resumes it), so, unlike findTestSubscription's pinned
+// subscription, no test run can knock it out of the wanted state.
+// Same unset-falls-back-to-searching-the-account behavior as
+// findTestSubscription for environments that haven't pinned one yet.
+func findCanceledTestSubscription(t *testing.T, c *client.Client) *client.Subscription {
+	t.Helper()
+	ctx := context.Background()
+
+	if id := os.Getenv("PADDLE_TEST_CANCELED_SUBSCRIPTION_ID"); id != "" {
+		sub, err := c.GetSubscription(ctx, id)
+		if err != nil {
+			t.Fatalf("GetSubscription(%q) (from PADDLE_TEST_CANCELED_SUBSCRIPTION_ID): %v", id, err)
+		}
+		if sub.Status != "canceled" {
+			t.Skipf("PADDLE_TEST_CANCELED_SUBSCRIPTION_ID=%s is currently %q, want \"canceled\" — this subscription is meant to stay canceled forever; if something changed it, fix it by hand rather than pointing this test at a different subscription instead", id, sub.Status)
+		}
+		return sub
+	}
+
+	subs, err := c.ListSubscriptions(ctx)
+	if err != nil {
+		t.Fatalf("ListSubscriptions: %v", err)
+	}
+	for i := range subs {
+		if subs[i].Status == "canceled" {
+			return &subs[i]
+		}
+	}
+	return nil
+}
+
 // TestAccPaddleSubscriptionCancel_invalidSubscriptionID always runs (needs
 // no fixture subscription) — confirms this action's real HTTP round trip
 // against the sandbox (auth, URL construction, error surfacing) works end
@@ -124,7 +166,7 @@ resource "terraform_data" "trigger" {
 func TestAccPaddleSubscriptionCancel_alreadyCanceledShortCircuits(t *testing.T) {
 	testAccPreCheck(t)
 	c := newTestAccClient()
-	sub := findTestSubscription(t, c, "canceled")
+	sub := findCanceledTestSubscription(t, c)
 	if sub == nil {
 		t.Skip("no already-canceled subscription found in the sandbox account — skipping (see findTestSubscription's comment on why this test can't self-provision one)")
 	}
