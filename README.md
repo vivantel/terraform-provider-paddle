@@ -128,6 +128,14 @@ With that set, `internal/provider/action_paddle_subscription_acc_test.go`'s test
 
 `TestAccPaddleAdjustment_basic` self-provisions its own fixture transaction, but needs one manual, one-time sandbox account setting first, **found by running this test against the real sandbox** (2026-08-10, `feat/v3-lifecycle-actions` PR CI): Paddle rejects *any* transaction creation via the API — even a fully manual, non-checkout one — until the account has a default payment link set (Paddle dashboard → **Checkout** → your default pay link). Without it, this test skips cleanly with a message pointing here rather than failing.
 
+`TestAccPaddleNotificationDataSource_basic`/`_byFilter` can't self-provision a notification either — a notification is Paddle's own record of an actual delivery attempt, produced only once a real event fires against a configured `notification_setting` destination, not creatable via a direct API call. Without one, both tests skip cleanly ("no notifications exist in this sandbox account"), which is real coverage of the lenient/empty-account path but not of the actual filter/lookup logic. To get that coverage, set up one **permanent** (not test-fixture) `paddle_notification_setting` in the sandbox account, separate from anything `sweep.yaml` cleans up:
+
+1. `type = "url"`, `destination` = any endpoint that reliably responds (e.g. a [webhook.site](https://webhook.site) URL) — Paddle records a delivery attempt either way, but a responding endpoint gets you `delivered` status instead of `failed`/`needs_retry`.
+2. `subscribed_events` — pick an event type this repo's own CI already triggers on every push, e.g. `["product.created"]`, so notifications accumulate naturally from routine test runs instead of needing a dedicated trigger.
+3. **Don't** put `"Acc Test"` anywhere in its `description` — `sweep.yaml` runs weekly and deletes anything matching that substring (`isAccTestName` in `internal/provider/sweep_test.go`); this one needs to survive sweeps indefinitely, same as the pinned subscriptions above.
+
+Like the default-payment-link setting above, this is an ongoing sandbox account precondition, not a one-time fixture — set once, no code or secret changes needed.
+
 ### `paddle_customer` — PII in your state file
 
 `paddle_customer` looks up an existing customer by `id` or `email`. This is a different risk category from the Actions section above — data exposure, not a financial/irreversible action — so it gets its own warning here rather than being folded into that section.
