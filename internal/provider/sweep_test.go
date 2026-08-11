@@ -112,14 +112,28 @@ func isAccTestCustomerEmail(email string) bool {
 // record but zeroes out what's owed. Treats a 404 from either path (the
 // transaction is already gone) as success, same tolerance every other
 // sweeper in this file already has for its own entity.
-func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txnID string) error {
-	if err := c.CancelTransaction(ctx, txnID); err == nil || client.IsNotFound(err) {
+func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txn client.Transaction) error {
+	if err := c.CancelTransaction(ctx, txn.ID); err == nil || client.IsNotFound(err) {
 		return nil
 	}
+	// Cancel failed — most likely because the transaction is past the
+	// cancelable draft/ready/billed states. Paddle's adjustment action
+	// must match the transaction's actual status: "refund" for a paid
+	// (completed) transaction, "credit" for an unpaid one (billed/
+	// past_due) — found the hard way, 2026-08-11: this sweeper originally
+	// hardcoded "credit" unconditionally, and Paddle rejected it for
+	// every one of these (real-world) subscription-charge transactions,
+	// which are auto-collected and therefore "completed" (paid) by the
+	// time this sweeper runs, not "billed" — "credit" doesn't apply to an
+	// already-paid transaction. type="full" needs no items either way.
+	action := "credit"
+	if txn.Status == "completed" {
+		action = "refund"
+	}
 	_, err := c.CreateAdjustment(ctx, client.Adjustment{
-		Action:        "credit",
+		Action:        action,
 		Type:          "full",
-		TransactionID: txnID,
+		TransactionID: txn.ID,
 		Reason:        "sweeper cleanup of a leaked test fixture transaction",
 	})
 	if client.IsNotFound(err) {
@@ -150,7 +164,7 @@ func sweepTestFixtureCustomers(_ string) error {
 			log.Printf("[WARN] failed to list transactions for leaked test fixture customer %s (%s): %s", cust.ID, cust.Email, err)
 		}
 		for _, txn := range txns {
-			if err := cancelOrCreditTransaction(ctx, c, txn.ID); err != nil {
+			if err := cancelOrCreditTransaction(ctx, c, txn); err != nil {
 				log.Printf("[WARN] failed to cancel/credit leaked test fixture transaction %s (customer %s): %s", txn.ID, cust.ID, err)
 				continue
 			}
@@ -194,7 +208,7 @@ func sweepTestSubscriptionCharges(_ string) error {
 	var matched, swept int
 	for _, txn := range txns {
 		matched++
-		if err := cancelOrCreditTransaction(ctx, c, txn.ID); err != nil {
+		if err := cancelOrCreditTransaction(ctx, c, txn); err != nil {
 			log.Printf("[WARN] failed to cancel/credit leaked subscription-charge transaction %s (subscription %s): %s", txn.ID, subID, err)
 			continue
 		}

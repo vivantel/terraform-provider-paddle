@@ -31,7 +31,18 @@ jobs:
         with:
           go-version: "1.25"
           cache: true
-      - run: go test ./internal/provider/... -sweep=sandbox -v
+        # ./internal/provider/... (not just ./internal/provider) used to
+        # be equivalent -- until internal/provider/actions existed
+        # (2026-08-10). That subpackage has no TestMain/-sweep support of
+        # its own (nothing in it is sweepable, it holds unit tests only),
+        # so passing -sweep down into it just fails with an unrecognized
+        # flag, found the hard way, 2026-08-11 (a real, if benign, sweep
+        # run failure -- the actual sweepers in internal/provider still
+        # ran and completed successfully despite it, but the job as a
+        # whole reported failure). Scoped to the exact package that has
+        # sweepers, not a wildcard that happens to have only ever matched
+        # one package until now.
+      - run: go test ./internal/provider -sweep=sandbox -v
         env:
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
           # paddle_test_subscription_charge sweeper (real invoices left
