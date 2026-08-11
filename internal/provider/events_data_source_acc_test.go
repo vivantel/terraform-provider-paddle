@@ -6,11 +6,23 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
+)
+
+// eventsDataSourceWaitAttempts/eventsDataSourceWaitDelay — read-after-write
+// lag mitigation, same reasoning as
+// action_paddle_subscription_charge.go's chargeSearchRetryAttempts/
+// chargeSearchRetryDelay. Found running this test against the real
+// sandbox, 2026-08-11: a product just created via CreateProduct wasn't
+// yet visible in GET /events on the very next query.
+const (
+	eventsDataSourceWaitAttempts = 5
+	eventsDataSourceWaitDelay    = 3 * time.Second
 )
 
 // testAccCheckEventsContainsProduct asserts the *data source's own state*
@@ -68,6 +80,20 @@ func TestAccPaddleEventsDataSource_productCreated(t *testing.T) {
 			t.Logf("cleanup: ArchiveProduct(%s): %v", prod.ID, err)
 		}
 	})
+
+	// Wait for Paddle's own event log to actually catch up before
+	// running the Terraform test — a single immediate query-then-give-up
+	// isn't reliable here (see the constants' comment above), and once
+	// this confirms the event visible via a direct API call, the data
+	// source's own single Read() during terraform apply below should
+	// reliably see it too.
+	found, err := waitForEventContaining(ctx, c.ListEvents, "product.created", prod.ID, eventsDataSourceWaitAttempts, eventsDataSourceWaitDelay)
+	if err != nil {
+		t.Fatalf("waitForEventContaining: %v", err)
+	}
+	if !found {
+		t.Fatalf("no product.created event containing fixture product %s appeared within %d attempts (%s apart) — either ListEvents is broken or Paddle's event log lag exceeds this wait", prod.ID, eventsDataSourceWaitAttempts, eventsDataSourceWaitDelay)
+	}
 
 	dataSourceName := "data.paddle_events.test"
 
