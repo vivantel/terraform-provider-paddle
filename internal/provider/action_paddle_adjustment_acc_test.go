@@ -194,11 +194,19 @@ func TestAccPaddleAdjustment_basic(t *testing.T) {
 	// found the hard way, 2026-08-11 (see client.TransactionLineItem's
 	// own comment for the full account: two different item shapes on
 	// the same Transaction object, easy to reach for the wrong one).
-	if transaction.Details == nil || len(transaction.Details.LineItems) == 0 {
-		t.Fatalf("fixture transaction %s has no Details.LineItems — can't build an itemized adjustment", transaction.ID)
+	// Resolved via client.ResolveLineItemID (internal/client/lineitem.go)
+	// rather than indexing Details.LineItems directly, matched against
+	// the fixture's own top-level Items[0].Price.ID — the same
+	// price-to-item_id reconciliation a real user has to do by hand
+	// without this helper.
+	if len(transaction.Items) == 0 {
+		t.Fatalf("fixture transaction %s has no Items — can't resolve an item_id", transaction.ID)
+	}
+	itemID, ok := client.ResolveLineItemID(transaction, transaction.Items[0].Price.ID)
+	if !ok {
+		t.Fatalf("fixture transaction %s: ResolveLineItemID(%s) found no unambiguous match in Details.LineItems", transaction.ID, transaction.Items[0].Price.ID)
 	}
 	transactionID := transaction.ID
-	itemID := transaction.Details.LineItems[0].ID
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

@@ -17,6 +17,50 @@ name: E2E (Published)
 # available in CI (see examples/full-stack/main.tf's own placeholder
 # chedom_... — illustrative only), so faking one here would be checking
 # nothing, not narrowing coverage on purpose.
+#
+# Also exercises paddle_subscription_pause/resume against the real
+# published binary, per
+# docs/guardrails/actions-need-scheduled-regression-coverage.md
+# (docs/plans/paddle-provider-v4.md Step 6): every one of v0.4.0-beta.1's
+# three real action bugs was only ever caught by a human manually running
+# `go test -run TestAcc` against the sandbox — nothing re-verified a
+# *working* action stayed working independent of a push. ci.yaml's
+# `acceptance` job already covers all five actions via `-run TestAcc` on
+# every push, but that runs the in-process build from source, never the
+# published Registry artifact — the same distinction that already applies
+# to this workflow's resource coverage above. Note this can't be "extend
+# a `go test -run` regex" the way action_paddle_*_acc_test.go's tests
+# work: those tests build the provider in-process
+# (testAccProtoV6ProviderFactories), so they're incapable of testing a
+# published binary at all, regardless of what's tagged. This workflow's
+# existing pattern — real Terraform HCL against the real published
+# artifact — is extended with an action block instead. pause+resume (not
+# cancel or charge) against PADDLE_TEST_SUBSCRIPTION_ID (README.md's
+# Actions section documents provisioning this pinned fixture) — safe and
+# fully reversible, same subscription the pause/resume acceptance test
+# already uses and always leaves back in `active`. Skips this part
+# cleanly if the secret isn't set (same skip-cleanly precedent
+# paddle_checkout_domain's coverage gap above already establishes),
+# rather than failing a workflow that has no way to provision its own
+# subscription (subscriptions can only be created via a real checkout,
+# confirmed 2026-08-10 — see README.md).
+#
+# Pause and resume are applied via TWO SEPARATE `terraform apply`
+# invocations, not one apply with two action_trigger'd resources — found
+# the hard way, 2026-08-11, running this workflow for real: an earlier
+# version relied on `depends_on` between two resources in the same apply
+# to serialize their actions, on the (wrong) assumption that Terraform's
+# resource-dependency graph also serializes action_trigger execution
+# order. It doesn't, at least not as observed: the real run's log showed
+# both actions starting within 2ms of each other, both reading the
+# subscription's pre-pause "active" status before either mutated it —
+# resume's own idempotency check no-opped ("already active"), pause's
+# check also saw "active" and paused it, leaving the pinned subscription
+# stuck paused in the real sandbox. Two fully separate `terraform apply`
+# CLI invocations (as two GitHub Actions steps) really do serialize —
+# resume's process cannot start until pause's process has exited — so
+# this is the fix, not same-apply `depends_on`. See the comment on the
+# second `terraform apply` step below for the full account.
 
 on:
   schedule:
@@ -27,6 +71,15 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Job-level, not step-level: GitHub Actions' `if:` conditionals
+      # cannot reference the `secrets` context at all ("Unrecognized
+      # named-value: 'secrets'", confirmed the hard way via
+      # `gh workflow run --ref` against this exact file) — only `env`,
+      # `github`, `vars`, etc. are available there. Mirroring the secret
+      # into a job-level env var here is what makes the action-coverage
+      # step's `if:` below actually valid.
+      PADDLE_TEST_SUBSCRIPTION_ID: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID }}
     steps:
       - uses: hashicorp/setup-terraform@v4
         with:
@@ -62,6 +115,13 @@ jobs:
           mkdir -p /tmp/e2e-published
           cat > /tmp/e2e-published/main.tf <<EOF
           terraform {
+            # >= 1.14.0 is required once the action block below is
+            # appended (paddle_subscription_pause/resume) — set
+            # unconditionally, same version this repo's own
+            # required_version constraint uses (README.md), rather than
+            # only when the action coverage step below actually runs.
+            required_version = ">= 1.14.0"
+
             required_providers {
               paddle = {
                 source  = "vivantel/paddle"
@@ -122,11 +182,87 @@ jobs:
           }
           EOF
 
+      - name: Append pause action config (if a pinned subscription is configured)
+        if: ${{ env.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
+        run: |
+          cat >> /tmp/e2e-published/main.tf <<EOF
+
+          action "paddle_subscription_pause" "e2e" {
+            config {
+              subscription_id = "${PADDLE_TEST_SUBSCRIPTION_ID}"
+              effective_from   = "immediately"
+            }
+          }
+
+          resource "terraform_data" "pause_trigger" {
+            input = "${{ github.run_id }}-${{ github.run_attempt }}"
+            lifecycle {
+              action_trigger {
+                events  = [after_create]
+                actions = [action.paddle_subscription_pause.e2e]
+              }
+            }
+          }
+          EOF
+
       - name: terraform init (real Registry pull, latest published version)
         working-directory: /tmp/e2e-published
         run: terraform init
 
       - name: terraform apply
+        working-directory: /tmp/e2e-published
+        run: terraform apply -auto-approve
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+
+      # Appended and applied as a genuinely separate `terraform apply`
+      # invocation, not folded into the config/apply above — found the
+      # hard way, 2026-08-11, running this workflow for real: an earlier
+      # version put pause and resume in the SAME apply, on two separate
+      # resources linked by `depends_on`, on the theory that Terraform's
+      # standard dependency graph would serialize their action_triggers.
+      # It didn't — the real run's log showed "Action started:
+      # action.paddle_subscription_pause.e2e" and "Action started:
+      # action.paddle_subscription_resume.e2e" within 2ms of each other,
+      # both reading the subscription's pre-pause "active" status before
+      # either mutated it, so resume's own idempotency check ("already
+      # active, not invoking again") no-opped while pause's check saw
+      # "active" too and paused it — leaving PADDLE_TEST_SUBSCRIPTION_ID
+      # stuck paused in the real sandbox, exactly the failure mode this
+      # step was supposed to prevent. depends_on serializes *resource*
+      # apply order; it does not serialize the actions attached to
+      # different resources' action_triggers, at least not as observed
+      # here. Two fully separate `terraform apply` CLI invocations *are*
+      # sequential — GitHub Actions steps run in order, and a second
+      # `terraform apply` process cannot start until this step's process
+      # has exited — so resume is only ever dispatched after pause's
+      # entire apply (action included) has already finished, no shared
+      # in-process action-scheduling involved at all.
+      - name: Append resume action config (if a pinned subscription is configured)
+        if: ${{ env.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
+        run: |
+          cat >> /tmp/e2e-published/main.tf <<EOF
+
+          action "paddle_subscription_resume" "e2e" {
+            config {
+              subscription_id = "${PADDLE_TEST_SUBSCRIPTION_ID}"
+              effective_from   = "immediately"
+            }
+          }
+
+          resource "terraform_data" "resume_trigger" {
+            input = "${{ github.run_id }}-${{ github.run_attempt }}"
+            lifecycle {
+              action_trigger {
+                events  = [after_create]
+                actions = [action.paddle_subscription_resume.e2e]
+              }
+            }
+          }
+          EOF
+
+      - name: terraform apply (resume — separate invocation, see comment above)
+        if: ${{ env.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
         working-directory: /tmp/e2e-published
         run: terraform apply -auto-approve
         env:
