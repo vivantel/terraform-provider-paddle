@@ -163,14 +163,6 @@ func FriendlyErrorMessage(err error) string {
 // a user considers sensitive, and the API key must never appear in a log
 // line at any level (it's set as a header directly on req, never passed
 // to a logging call).
-// DebugRawGET is TEMPORARY, purely diagnostic (2026-08-11): exposes do()
-// for a one-off raw-JSON dump while investigating why the
-// next-transaction preview came back empty for the pinned test
-// subscription. Delete once that investigation concludes.
-func (c *Client) DebugRawGET(ctx context.Context, path string, out any) error {
-	return c.do(ctx, http.MethodGet, path, nil, out)
-}
-
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, retryOverallBudget)
 	defer cancel()
@@ -1390,8 +1382,43 @@ type NextTransactionItem struct {
 	Quantity int64  `json:"quantity"`
 }
 
+// NextTransactionPreview.Items has a custom UnmarshalJSON below —
+// confirmed against a real raw response, 2026-08-11: the preview's items
+// are NOT at a top-level "items" key at all (that key doesn't exist on
+// this object), they're nested under "details.line_items", a completely
+// different shape again from both Transaction.Items (nested price.id) and
+// Transaction.Details.LineItems (has its own txnitm_... id) — see those
+// two types' comments. Getting this wrong meant Items was silently always
+// empty, which meant findMatchingScheduledCharge's search-before-invoke
+// check for "next_billing_period" charges could never find a match no
+// matter what was actually queued — confirmed the hard way: this
+// produced a real duplicate one-time charge queued against a live sandbox
+// subscription's next renewal (docs/guardrails/money-moving-actions-no-blanket-retry.md).
 type NextTransactionPreview struct {
-	Items []NextTransactionItem `json:"items"`
+	Items []NextTransactionItem
+}
+
+type nextTransactionLineItemWire struct {
+	PriceID  string `json:"price_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+type nextTransactionPreviewWire struct {
+	Details struct {
+		LineItems []nextTransactionLineItemWire `json:"line_items"`
+	} `json:"details"`
+}
+
+func (p *NextTransactionPreview) UnmarshalJSON(data []byte) error {
+	var wire nextTransactionPreviewWire
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	p.Items = make([]NextTransactionItem, 0, len(wire.Details.LineItems))
+	for _, li := range wire.Details.LineItems {
+		p.Items = append(p.Items, NextTransactionItem(li))
+	}
+	return nil
 }
 
 type subscriptionWithNextTransactionEnvelope struct {

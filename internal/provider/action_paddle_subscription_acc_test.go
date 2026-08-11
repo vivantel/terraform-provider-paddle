@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -476,73 +475,4 @@ resource "terraform_data" "trigger" {
 			},
 		},
 	})
-}
-
-// TestAccDebugDumpNextTransactionPreview is TEMPORARY, purely diagnostic
-// (2026-08-11): a pure read against the pinned subscription's
-// next_transaction preview, zero risk of creating anything, to see the
-// actual raw state after TestAccPaddleSubscriptionCharge_nextBillingPeriod_roundTrip
-// failed twice in a row with 0 matches -- need to know whether that's
-// because nothing is actually queued (the charge silently didn't queue
-// anything) or because something *is* queued but this test's own
-// matching logic can't see it. Delete once the real cause is found.
-func TestAccDebugDumpNextTransactionPreview(t *testing.T) {
-	testAccPreCheck(t)
-	c := newTestAccClient()
-	subID := os.Getenv("PADDLE_TEST_SUBSCRIPTION_ID")
-	if subID == "" {
-		t.Skip("PADDLE_TEST_SUBSCRIPTION_ID not set")
-	}
-	preview, err := c.GetSubscriptionNextTransaction(context.Background(), subID)
-	if err != nil {
-		t.Fatalf("GetSubscriptionNextTransaction: %v", err)
-	}
-	t.Logf("preview = %+v", preview)
-	if preview != nil {
-		for i, item := range preview.Items {
-			t.Logf("item[%d] = %+v", i, item)
-		}
-	}
-}
-
-// TestAccDebugDumpSubscription is TEMPORARY, purely diagnostic (2026-08-11):
-// companion to TestAccDebugDumpNextTransactionPreview -- dumps the FULL raw
-// JSON (client.Subscription only captures ID/Status, not nearly enough to
-// diagnose this) to see whether the pinned subscription's own status/items
-// explain why its next-transaction preview came back with zero items at
-// all (even its own normal recurring items), not just zero *queued
-// one-time charges*.
-func TestAccDebugDumpSubscription(t *testing.T) {
-	testAccPreCheck(t)
-	c := newTestAccClient()
-	subID := os.Getenv("PADDLE_TEST_SUBSCRIPTION_ID")
-	if subID == "" {
-		t.Skip("PADDLE_TEST_SUBSCRIPTION_ID not set")
-	}
-	var raw map[string]any
-	if err := c.DebugRawGET(context.Background(), "/subscriptions/"+subID+"?include=next_transaction,recurring_transaction_details", &raw); err != nil {
-		t.Fatalf("raw GET: %v", err)
-	}
-	b, _ := json.MarshalIndent(raw, "", "  ")
-	t.Logf("raw subscription = %s", b)
-}
-
-// TestAccDebugListAllSubscriptionTransactions is TEMPORARY, purely
-// diagnostic (2026-08-11): checking whether the two duplicate queued
-// one-time-charge line items found in the next_transaction preview
-// correspond to any separately cancelable Transaction object (draft
-// status or otherwise), before deciding how to clean them up.
-func TestAccDebugListAllSubscriptionTransactions(t *testing.T) {
-	testAccPreCheck(t)
-	c := newTestAccClient()
-	subID := os.Getenv("PADDLE_TEST_SUBSCRIPTION_ID")
-	if subID == "" {
-		t.Skip("PADDLE_TEST_SUBSCRIPTION_ID not set")
-	}
-	var raw map[string]any
-	if err := c.DebugRawGET(context.Background(), "/transactions?subscription_id="+subID+"&per_page=50", &raw); err != nil {
-		t.Fatalf("raw GET: %v", err)
-	}
-	b, _ := json.MarshalIndent(raw, "", "  ")
-	t.Logf("raw transactions = %s", b)
 }

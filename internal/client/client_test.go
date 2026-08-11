@@ -534,12 +534,20 @@ func TestAddressJSON_CountryCodeOnly(t *testing.T) {
 }
 
 func TestSubscriptionWithNextTransactionJSON_DecodesQueuedItems(t *testing.T) {
+	// next_transaction's items are nested under details.line_items, not
+	// a top-level "items" key — see NextTransactionPreview's own comment
+	// (this fixture originally used the assumed-but-wrong flat shape,
+	// which meant this test kept passing while the real client silently
+	// decoded nothing at all; TestNextTransactionPreviewJSON_* below now
+	// covers that shape directly).
 	body := `{
 		"data": {
 			"id": "sub_01abc",
 			"status": "active",
 			"next_transaction": {
-				"items": [{"price_id": "pri_01abc", "quantity": 2}]
+				"details": {
+					"line_items": [{"price_id": "pri_01abc", "quantity": 2}]
+				}
 			}
 		}
 	}`
@@ -686,5 +694,58 @@ func TestTransactionJSON_DetailsNilWhenAbsent(t *testing.T) {
 	}
 	if txn.Details != nil {
 		t.Errorf("Details = %+v, want nil when absent from the response", txn.Details)
+	}
+}
+
+func TestNextTransactionPreviewJSON_ItemsComeFromDetailsLineItems(t *testing.T) {
+	// Confirms the real response shape, 2026-08-11: a subscription's
+	// next_transaction preview has no top-level "items" key at all —
+	// its line items are nested under "details.line_items", a THIRD,
+	// completely different item shape from both Transaction.Items
+	// (nested price.id) and Transaction.Details.LineItems (has its own
+	// txnitm_... id). Assuming a flat top-level "items" key (this
+	// package's original design) meant NextTransactionPreview.Items was
+	// silently always empty, which meant paddle_subscription_charge's
+	// search-before-invoke check for effective_from="next_billing_period"
+	// could never find a match no matter what was actually queued —
+	// found only after this let a real duplicate charge through against
+	// a live sandbox subscription's next renewal
+	// (docs/guardrails/money-moving-actions-no-blanket-retry.md). The
+	// real preview also mixes the subscription's own recurring items in
+	// with any queued one-time charges in the same list — see
+	// findMatchingScheduledCharge's comment for why matching against
+	// this needs subset containment, not an exact-set match.
+	body := `{
+		"adjustments": [],
+		"details": {
+			"line_items": [
+				{"item_id": null, "price_id": "pri_recurring", "quantity": 1},
+				{"item_id": null, "price_id": "pri_onetime", "quantity": 2}
+			]
+		}
+	}`
+	var preview NextTransactionPreview
+	if err := json.Unmarshal([]byte(body), &preview); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(preview.Items) != 2 {
+		t.Fatalf("len(Items) = %d, want 2", len(preview.Items))
+	}
+	if preview.Items[0].PriceID != "pri_recurring" || preview.Items[0].Quantity != 1 {
+		t.Errorf("Items[0] = %+v, want {PriceID:pri_recurring Quantity:1}", preview.Items[0])
+	}
+	if preview.Items[1].PriceID != "pri_onetime" || preview.Items[1].Quantity != 2 {
+		t.Errorf("Items[1] = %+v, want {PriceID:pri_onetime Quantity:2}", preview.Items[1])
+	}
+}
+
+func TestNextTransactionPreviewJSON_NoLineItemsIsEmptyNotNil(t *testing.T) {
+	body := `{"details": {"line_items": []}}`
+	var preview NextTransactionPreview
+	if err := json.Unmarshal([]byte(body), &preview); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(preview.Items) != 0 {
+		t.Errorf("len(Items) = %d, want 0", len(preview.Items))
 	}
 }

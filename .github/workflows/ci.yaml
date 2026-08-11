@@ -59,7 +59,7 @@ jobs:
         # here means the library finds it on PATH first and never hits
         # that code path, regardless of whether a given hc-install/
         # terraform-plugin-testing version has the issue.
-      - run: go test ./... -run 'TestAccDebugDumpNextTransactionPreview|TestAccDebugDumpSubscription|TestAccDebugListAllSubscriptionTransactions' -v
+      - run: go test ./... -run TestAcc -v
         env:
           TF_ACC: "1"
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}

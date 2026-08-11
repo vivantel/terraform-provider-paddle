@@ -131,6 +131,28 @@ func TestFindMatchingScheduledCharge_EmptyPreviewItemsIsNoMatch(t *testing.T) {
 	}
 }
 
+func TestFindMatchingScheduledCharge_MatchesAlongsideUnrelatedRecurringItems(t *testing.T) {
+	// The real shape (confirmed against the live API, 2026-08-11): the
+	// preview's item list is the subscription's own normal recurring
+	// items PLUS any queued one-time charges, all mixed together in one
+	// list — never just the charge's own items in isolation. An
+	// exact-set match (sameChargeItems) would never succeed here even
+	// though the wanted charge really is queued; this is exactly the bug
+	// that let a real duplicate charge through in production, found only
+	// after the JSON-path bug (NextTransactionPreview always empty) was
+	// separately fixed and this one was then exposed.
+	preview := &client.NextTransactionPreview{
+		Items: []client.NextTransactionItem{
+			{PriceID: "pri_recurring", Quantity: 1},
+			{PriceID: "pri_1", Quantity: 1},
+		},
+	}
+	want := []client.SubscriptionChargeItem{{PriceID: "pri_1", Quantity: 1}}
+	if !findMatchingScheduledCharge(preview, want) {
+		t.Error("findMatchingScheduledCharge = false, want true — wanted charge is present alongside the subscription's own recurring item")
+	}
+}
+
 func TestWaitOrDone_ReturnsFalseOnAlreadyCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
