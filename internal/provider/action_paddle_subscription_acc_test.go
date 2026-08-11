@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -502,4 +503,26 @@ func TestAccDebugDumpNextTransactionPreview(t *testing.T) {
 			t.Logf("item[%d] = %+v", i, item)
 		}
 	}
+}
+
+// TestAccDebugDumpSubscription is TEMPORARY, purely diagnostic (2026-08-11):
+// companion to TestAccDebugDumpNextTransactionPreview -- dumps the FULL raw
+// JSON (client.Subscription only captures ID/Status, not nearly enough to
+// diagnose this) to see whether the pinned subscription's own status/items
+// explain why its next-transaction preview came back with zero items at
+// all (even its own normal recurring items), not just zero *queued
+// one-time charges*.
+func TestAccDebugDumpSubscription(t *testing.T) {
+	testAccPreCheck(t)
+	c := newTestAccClient()
+	subID := os.Getenv("PADDLE_TEST_SUBSCRIPTION_ID")
+	if subID == "" {
+		t.Skip("PADDLE_TEST_SUBSCRIPTION_ID not set")
+	}
+	var raw map[string]any
+	if err := c.DebugRawGET(context.Background(), "/subscriptions/"+subID+"?include=next_transaction,recurring_transaction_details", &raw); err != nil {
+		t.Fatalf("raw GET: %v", err)
+	}
+	b, _ := json.MarshalIndent(raw, "", "  ")
+	t.Logf("raw subscription = %s", b)
 }

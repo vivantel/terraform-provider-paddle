@@ -163,6 +163,14 @@ func FriendlyErrorMessage(err error) string {
 // a user considers sensitive, and the API key must never appear in a log
 // line at any level (it's set as a header directly on req, never passed
 // to a logging call).
+// DebugRawGET is TEMPORARY, purely diagnostic (2026-08-11): exposes do()
+// for a one-off raw-JSON dump while investigating why the
+// next-transaction preview came back empty for the pinned test
+// subscription. Delete once that investigation concludes.
+func (c *Client) DebugRawGET(ctx context.Context, path string, out any) error {
+	return c.do(ctx, http.MethodGet, path, nil, out)
+}
+
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, retryOverallBudget)
 	defer cancel()
