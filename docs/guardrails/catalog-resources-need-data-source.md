@@ -33,3 +33,7 @@ existing infrastructure.
 
 - [[0001-catalog-only-scope-v1]]
 - `docs/plans/paddle-provider-v1.md`
+- `docs/guardrails/lookup-data-sources-required-for-action-inputs.md` —
+  the same underlying principle, generalized to actions' required ID
+  inputs rather than catalog resources specifically (added 2026-08-11,
+  [[0011-v4-scope-data-sources-and-regression-guard]]).
