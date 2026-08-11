@@ -68,6 +68,22 @@ protections, not just one:
      a synthetic key would have been (two deliberately separate charges
      for identical items are indistinguishable from a retry to this
      check), documented as such in the action's own schema description.
+     **Second correction, found running the real sandbox acceptance test,
+     2026-08-11**: that transaction-search check only works for
+     `effective_from="immediately"` — Paddle creates no queryable
+     transaction at all for a `"next_billing_period"` charge until the
+     subscription actually renews, so the search silently found nothing
+     both before and after invoking, `paddle_subscription_charge`'s own
+     duplicate-prevention **did not fire at all** for that input value.
+     Fixed by branching on `effective_from`: `"next_billing_period"`
+     checks `GetSubscriptionNextTransaction` (Paddle's own
+     `?include=next_transaction` renewal preview) instead of searching
+     transactions. This shipped broken in `v0.4.0-beta.1` for one full
+     release before being caught — the "invoke twice, confirm once"
+     acceptance-test standard this guardrail requires (see
+     `docs/plans/paddle-provider-v3.md` Step 1 item 5) is exactly what
+     caught it, once actually run against the real sandbox rather than
+     only unit-tested.
      See `docs/plans/paddle-provider-v3.md` Step 2 for the full account
      of this correction.
 

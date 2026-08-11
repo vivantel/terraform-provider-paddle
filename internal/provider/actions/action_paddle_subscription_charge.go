@@ -49,10 +49,13 @@ func (a *SubscriptionChargeAction) Schema(_ context.Context, _ action.SchemaRequ
 			"**Catalog prices only** (`price_id` + `quantity`) — Paddle's API also accepts two inline non-catalog item shapes " +
 			"(an ad hoc price against an existing product, or a fully inline product+price); those aren't supported by this " +
 			"action yet, deliberately scoped out rather than half-modeled (docs/plans/paddle-provider-v3.md Step 2). Before " +
-			"charging, lists this subscription's existing `subscription_charge`-origin transactions and treats an exact match " +
-			"on the requested `items` (same `price_id`+`quantity` set) as already-done — best-effort, **not a guarantee**: two " +
-			"deliberate, genuinely separate charges for the identical items would look identical to this check too " +
-			"(docs/guardrails/money-moving-actions-no-blanket-retry.md).",
+			"charging, checks whether an equivalent charge already exists and treats a match as already-done — best-effort, " +
+			"**not a guarantee**: two deliberate, genuinely separate charges for the identical items would look identical to " +
+			"this check too (docs/guardrails/money-moving-actions-no-blanket-retry.md). The check itself differs by " +
+			"`effective_from`, since Paddle only creates a queryable transaction record for an `immediately` charge — a " +
+			"`next_billing_period` charge is checked against the subscription's next-renewal preview instead (found " +
+			"necessary against the real sandbox, 2026-08-10: searching transactions for a `next_billing_period` charge " +
+			"always finds nothing, since none exists yet until the subscription actually renews).",
 		Attributes: map[string]actionschema.Attribute{
 			"subscription_id": actionschema.StringAttribute{
 				Required:            true,
@@ -137,6 +140,7 @@ func sameChargeItems(want []client.SubscriptionChargeItem, got []client.Transact
 }
 
 // findMatchingCharge implements this action's search-before-invoke check
+// for effective_from="immediately"
 // (docs/guardrails/money-moving-actions-no-blanket-retry.md): a pure
 // function over already-fetched transactions so it's unit-testable
 // without an HTTP round trip. See this action's Schema description for
@@ -151,6 +155,27 @@ func findMatchingCharge(existing []client.Transaction, wantItems []client.Subscr
 	return nil
 }
 
+// findMatchingScheduledCharge is findMatchingCharge's counterpart for
+// effective_from="next_billing_period": a charge scheduled for the next
+// renewal produces no queryable Transaction at all until the subscription
+// actually renews (confirmed against the real API and the real sandbox,
+// 2026-08-10 — found by running this action's acceptance test for real,
+// not assumed at design time), so ListSubscriptionChargeTransactions
+// can't see it — searching it for a "next_billing_period" charge would
+// always report no match, defeating search-before-invoke silently.
+// Paddle's own next_transaction preview (GetSubscriptionNextTransaction)
+// is the only way to see what's already queued.
+func findMatchingScheduledCharge(preview *client.NextTransactionPreview, wantItems []client.SubscriptionChargeItem) bool {
+	if preview == nil {
+		return false
+	}
+	got := make([]client.TransactionItem, 0, len(preview.Items))
+	for _, item := range preview.Items {
+		got = append(got, client.TransactionItem{PriceID: item.PriceID, Quantity: item.Quantity})
+	}
+	return sameChargeItems(wantItems, got)
+}
+
 func (a *SubscriptionChargeAction) Invoke(ctx context.Context, req action.InvokeRequest, resp *action.InvokeResponse) {
 	var config subscriptionChargeActionModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
@@ -158,24 +183,44 @@ func (a *SubscriptionChargeAction) Invoke(ctx context.Context, req action.Invoke
 		return
 	}
 	subID := config.SubscriptionID.ValueString()
+	effectiveFrom := config.EffectiveFrom.ValueString()
 	wantItems := toAPISubscriptionChargeItems(config.Items)
 
-	existing, err := a.client.ListSubscriptionChargeTransactions(ctx, subID)
-	if err != nil {
-		resp.Diagnostics.AddError("Error searching existing Paddle subscription charges", client.FriendlyErrorMessage(err))
-		return
-	}
-	if match := findMatchingCharge(existing, wantItems); match != nil {
-		if resp.SendProgress != nil {
-			resp.SendProgress(action.InvokeProgressEvent{
-				Message: fmt.Sprintf("A one-time charge with these exact items already exists for subscription %s (%s, status=%s) — not creating a duplicate.", subID, match.ID, match.Status),
-			})
+	// Two different, non-interchangeable searches depending on
+	// effective_from — see findMatchingScheduledCharge's comment for why
+	// a single search can't cover both.
+	if effectiveFrom == "next_billing_period" {
+		preview, err := a.client.GetSubscriptionNextTransaction(ctx, subID)
+		if err != nil {
+			resp.Diagnostics.AddError("Error checking Paddle subscription's next transaction preview", client.FriendlyErrorMessage(err))
+			return
 		}
-		return
+		if findMatchingScheduledCharge(preview, wantItems) {
+			if resp.SendProgress != nil {
+				resp.SendProgress(action.InvokeProgressEvent{
+					Message: fmt.Sprintf("A one-time charge with these exact items is already queued for subscription %s's next renewal — not creating a duplicate.", subID),
+				})
+			}
+			return
+		}
+	} else {
+		existing, err := a.client.ListSubscriptionChargeTransactions(ctx, subID)
+		if err != nil {
+			resp.Diagnostics.AddError("Error searching existing Paddle subscription charges", client.FriendlyErrorMessage(err))
+			return
+		}
+		if match := findMatchingCharge(existing, wantItems); match != nil {
+			if resp.SendProgress != nil {
+				resp.SendProgress(action.InvokeProgressEvent{
+					Message: fmt.Sprintf("A one-time charge with these exact items already exists for subscription %s (%s, status=%s) — not creating a duplicate.", subID, match.ID, match.Status),
+				})
+			}
+			return
+		}
 	}
 
 	chargeReq := client.SubscriptionChargeRequest{
-		EffectiveFrom: config.EffectiveFrom.ValueString(),
+		EffectiveFrom: effectiveFrom,
 		Items:         wantItems,
 	}
 	if !config.OnPaymentFailure.IsNull() && !config.OnPaymentFailure.IsUnknown() {

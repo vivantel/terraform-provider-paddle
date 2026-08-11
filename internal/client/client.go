@@ -1303,6 +1303,47 @@ func (c *Client) ListSubscriptionChargeTransactions(ctx context.Context, subscri
 	}
 }
 
+// NextTransactionItem/GetSubscriptionNextTransaction: a one-time charge
+// created with effective_from "next_billing_period" produces no
+// queryable Transaction at all until the subscription actually renews
+// (confirmed against the real API reference and the real sandbox,
+// 2026-08-10 — a genuine gap this client shipped with initially, found by
+// running paddle_subscription_charge's acceptance test for real:
+// ListSubscriptionChargeTransactions correctly finds nothing for a
+// "next_billing_period" charge, but that's not "no duplicate exists", it's
+// "this search method can't see pending ones at all"). Paddle's own docs
+// name the fix: GET /subscriptions/{id}?include=next_transaction previews
+// what's already queued for the next renewal, including one-time charges
+// not yet billed — this is what a "next_billing_period" charge's
+// search-before-invoke must check instead of ListSubscriptionChargeTransactions.
+type NextTransactionItem struct {
+	PriceID  string `json:"price_id"`
+	Quantity int64  `json:"quantity"`
+}
+
+type NextTransactionPreview struct {
+	Items []NextTransactionItem `json:"items"`
+}
+
+type subscriptionWithNextTransactionEnvelope struct {
+	Data struct {
+		Subscription
+		NextTransaction *NextTransactionPreview `json:"next_transaction"`
+	} `json:"data"`
+}
+
+// GetSubscriptionNextTransaction returns nil (not an error) if the
+// subscription has no upcoming charge preview at all — a subscription
+// with nothing queued for its next renewal beyond its normal recurring
+// items is a legitimate, common case, not a failure.
+func (c *Client) GetSubscriptionNextTransaction(ctx context.Context, id string) (*NextTransactionPreview, error) {
+	var env subscriptionWithNextTransactionEnvelope
+	if err := c.do(ctx, http.MethodGet, "/subscriptions/"+id+"?include=next_transaction", nil, &env); err != nil {
+		return nil, err
+	}
+	return env.Data.NextTransaction, nil
+}
+
 // ── Test fixture support only — Customers, Addresses, Transactions ────────
 //
 // NOT managed resources and NOT exposed anywhere in

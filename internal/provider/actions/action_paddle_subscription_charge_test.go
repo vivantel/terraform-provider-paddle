@@ -87,3 +87,41 @@ func TestToAPISubscriptionChargeItems_ConvertsAllFields(t *testing.T) {
 		t.Errorf("toAPISubscriptionChargeItems() = %+v, want [{pri_1 3}]", got)
 	}
 }
+
+func TestFindMatchingScheduledCharge_NilPreviewIsNoMatch(t *testing.T) {
+	want := []client.SubscriptionChargeItem{{PriceID: "pri_1", Quantity: 1}}
+	if findMatchingScheduledCharge(nil, want) {
+		t.Error("findMatchingScheduledCharge(nil, ...) = true, want false")
+	}
+}
+
+func TestFindMatchingScheduledCharge_MatchesQueuedItems(t *testing.T) {
+	preview := &client.NextTransactionPreview{
+		Items: []client.NextTransactionItem{{PriceID: "pri_1", Quantity: 1}},
+	}
+	want := []client.SubscriptionChargeItem{{PriceID: "pri_1", Quantity: 1}}
+	if !findMatchingScheduledCharge(preview, want) {
+		t.Error("findMatchingScheduledCharge = false, want true — item set matches the preview exactly")
+	}
+}
+
+func TestFindMatchingScheduledCharge_NoMatchWhenItemsDiffer(t *testing.T) {
+	preview := &client.NextTransactionPreview{
+		Items: []client.NextTransactionItem{{PriceID: "pri_1", Quantity: 1}},
+	}
+	want := []client.SubscriptionChargeItem{{PriceID: "pri_2", Quantity: 1}}
+	if findMatchingScheduledCharge(preview, want) {
+		t.Error("findMatchingScheduledCharge = true, want false — different price_id")
+	}
+}
+
+func TestFindMatchingScheduledCharge_EmptyPreviewItemsIsNoMatch(t *testing.T) {
+	// A subscription can have a next_transaction preview (its normal
+	// recurring renewal) with no one-time charge queued at all yet --
+	// must not match a nonempty want.
+	preview := &client.NextTransactionPreview{Items: nil}
+	want := []client.SubscriptionChargeItem{{PriceID: "pri_1", Quantity: 1}}
+	if findMatchingScheduledCharge(preview, want) {
+		t.Error("findMatchingScheduledCharge = true, want false — preview has no queued one-time charge")
+	}
+}

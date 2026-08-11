@@ -400,23 +400,26 @@ Implements: [[0010-v3-scope-lifecycle-actions]],
      source nor the confirmed target state falls through to the normal
      mutating call, so Paddle's own response (success or a real error)
      is what the user sees.
-   - `charge`: resolved 2026-08-10 — `create-subscription-charge`'s
-     request body has a genuine client-settable field, confirmed against
-     the real API reference: per-item `custom_data` (structured
-     key-value, echoed back on the resulting object) and `receipt_data`
-     (free text, `immediately`-only). Generate a **deterministic** key
-     (a hash of this invocation's own inputs — `subscription_id` +
-     `items` + amount/description — not a random UUID, since a genuine
-     retry must reproduce the identical key without anywhere durable to
-     store one; actions have no persisted state between invocations,
-     unlike a resource's `.tfstate` slot) and set it in `custom_data` at
-     invoke time. Before calling `ChargeSubscription`, list recent
-     transactions on the subscription and search for that exact key
-     instead of a fuzzy amount/description/time-window heuristic. Still
-     document as best-effort in the schema description (list-based
-     search, not a server-side guarantee — same caveat class as every
-     other search-before-invoke check here), just with a precise key to
-     match on instead of guessing.
+   - `charge`: this item's original plan (a `custom_data`-embedded
+     deterministic key) turned out not to fit the shipped, catalog-only
+     item scope — `custom_data` only exists on the two non-catalog item
+     variants this action deliberately doesn't support, found during
+     implementation. **Correction 1 (2026-08-10)**: shipped as an exact
+     `price_id`+`quantity` item-set match against
+     `ListSubscriptionChargeTransactions` (`origin=subscription_charge`)
+     instead — weaker than a synthetic key (two deliberately separate
+     charges for identical items look identical to it), documented as
+     such. **Correction 2 (2026-08-11, found running the real sandbox
+     acceptance test)**: that transaction search only works for
+     `effective_from="immediately"` — Paddle creates no queryable
+     transaction at all for `"next_billing_period"` until the
+     subscription renews, so the check silently never fired for that
+     input. Fixed: `effective_from="next_billing_period"` now checks
+     `GetSubscriptionNextTransaction` (`?include=next_transaction`)
+     instead. See `docs/guardrails/money-moving-actions-no-blanket-retry.md`
+     for the full account — this shipped broken in `v0.4.0-beta.1` for
+     one release before the real-sandbox acceptance test standard this
+     plan itself requires (item 5 below) caught it.
 4. Register all four in `provider.go`'s `Actions()`.
 5. Unit tests for each action's status-check short-circuit logic
    (`cancel`/`pause`/`resume`: fabricate a `GetSubscription` response

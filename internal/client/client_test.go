@@ -532,3 +532,42 @@ func TestAddressJSON_CountryCodeOnly(t *testing.T) {
 	}
 	assertJSONEqual(t, b, `{"country_code":"US"}`)
 }
+
+func TestSubscriptionWithNextTransactionJSON_DecodesQueuedItems(t *testing.T) {
+	body := `{
+		"data": {
+			"id": "sub_01abc",
+			"status": "active",
+			"next_transaction": {
+				"items": [{"price_id": "pri_01abc", "quantity": 2}]
+			}
+		}
+	}`
+	var env subscriptionWithNextTransactionEnvelope
+	if err := json.Unmarshal([]byte(body), &env); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if env.Data.ID != "sub_01abc" || env.Data.Status != "active" {
+		t.Errorf("Data = %+v, want ID/Status populated from the embedded Subscription fields", env.Data)
+	}
+	if env.Data.NextTransaction == nil || len(env.Data.NextTransaction.Items) != 1 {
+		t.Fatalf("NextTransaction = %+v, want one item", env.Data.NextTransaction)
+	}
+	item := env.Data.NextTransaction.Items[0]
+	if item.PriceID != "pri_01abc" || item.Quantity != 2 {
+		t.Errorf("item = %+v, want {pri_01abc 2}", item)
+	}
+}
+
+func TestSubscriptionWithNextTransactionJSON_NilWhenAbsent(t *testing.T) {
+	// A subscription with nothing queued for its next renewal beyond its
+	// normal recurring items may omit next_transaction entirely.
+	body := `{"data": {"id": "sub_01abc", "status": "active"}}`
+	var env subscriptionWithNextTransactionEnvelope
+	if err := json.Unmarshal([]byte(body), &env); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if env.Data.NextTransaction != nil {
+		t.Errorf("NextTransaction = %+v, want nil when the field is absent from the response", env.Data.NextTransaction)
+	}
+}

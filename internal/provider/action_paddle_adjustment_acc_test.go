@@ -35,7 +35,15 @@ func createAdjustmentFixtureTransaction(t *testing.T, c *client.Client) string {
 	ctx := context.Background()
 	suffix := randAccTestSuffix()
 
-	cust, err := c.CreateCustomer(ctx, client.Customer{Email: fmt.Sprintf("acctest-adjustment-%s@example.invalid", suffix)})
+	// Name is required, not just Email — found against the real sandbox,
+	// 2026-08-11: Paddle rejects a manual-collection transaction with
+	// transaction_customer_not_suitable_for_collection_mode if the
+	// attached customer has no name (manual collection produces an
+	// invoice, and invoices need a name to generate).
+	cust, err := c.CreateCustomer(ctx, client.Customer{
+		Email: fmt.Sprintf("acctest-adjustment-%s@example.invalid", suffix),
+		Name:  "Acc Test Fixture Customer " + suffix,
+	})
 	if err != nil {
 		t.Fatalf("fixture CreateCustomer: %v", err)
 	}
