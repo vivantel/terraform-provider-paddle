@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -158,7 +159,20 @@ func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txn client
 		Reason:        "sweeper cleanup of a leaked test fixture transaction",
 		Items:         items,
 	})
-	if client.IsNotFound(err) {
+	if err == nil || client.IsNotFound(err) {
+		return nil
+	}
+	// A repeat sweep run matches every subscription_charge-origin
+	// transaction unconditionally (see this sweeper's own comment on why
+	// — no cheap way to mark one as "already handled"), so a transaction
+	// a previous run already fully refunded/credited gets matched again
+	// here every time. adjustment_transaction_item_has_already_been_fully_adjusted
+	// means exactly that: already cleaned up, not a real failure — found
+	// running a second sweep after the first had already handled these,
+	// 2026-08-11. Treated as success so it doesn't look like a bug on
+	// every future run.
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) && strings.Contains(apiErr.Body, "adjustment_transaction_item_has_already_been_fully_adjusted") {
 		return nil
 	}
 	return err
