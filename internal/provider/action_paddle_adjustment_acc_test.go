@@ -109,6 +109,7 @@ func testAccAdjustmentConfig(transactionID, reason, triggerInput string) string 
 action "paddle_adjustment" "test" {
   config {
     action         = "credit"
+    type           = "full"
     transaction_id = %q
     reason         = %q
   }
