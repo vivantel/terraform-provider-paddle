@@ -119,15 +119,34 @@ func FriendlyErrorMessage(err error) string {
 		Error struct {
 			Code   string `json:"code"`
 			Detail string `json:"detail"`
+			// Errors carries field-level detail on some validation
+			// failures (a generic top-level "Invalid request." otherwise
+			// gives no clue which field or why) — found the hard way,
+			// 2026-08-11: a real bug (empty transaction_id sent to
+			// list-adjustments) surfaced only as "Invalid request.
+			// (bad_request)" until this field's raw JSON was inspected
+			// separately from this function, costing real debugging time
+			// this function should have saved. Not every error response
+			// has this field — Paddle's own error shape varies more than
+			// the success shape does (see this file's other error-shape
+			// comments), so its absence isn't itself a parse failure.
+			Errors []struct {
+				Field   string `json:"field"`
+				Message string `json:"message"`
+			} `json:"errors"`
 		} `json:"error"`
 	}
 	if jsonErr := json.Unmarshal([]byte(apiErr.Body), &envelope); jsonErr != nil || envelope.Error.Detail == "" {
 		return err.Error()
 	}
+	msg := envelope.Error.Detail
 	if envelope.Error.Code != "" {
-		return fmt.Sprintf("%s (%s)", envelope.Error.Detail, envelope.Error.Code)
+		msg = fmt.Sprintf("%s (%s)", msg, envelope.Error.Code)
 	}
-	return envelope.Error.Detail
+	for _, fieldErr := range envelope.Error.Errors {
+		msg += fmt.Sprintf("; %s: %s", fieldErr.Field, fieldErr.Message)
+	}
+	return msg
 }
 
 // do sends a request, retrying on 429 (rate limited) and 5xx (transient

@@ -571,3 +571,41 @@ func TestSubscriptionWithNextTransactionJSON_NilWhenAbsent(t *testing.T) {
 		t.Errorf("NextTransaction = %+v, want nil when the field is absent from the response", env.Data.NextTransaction)
 	}
 }
+
+func TestFriendlyErrorMessage_IncludesFieldLevelErrors(t *testing.T) {
+	apiErr := &APIError{
+		StatusCode: 400,
+		Body: `{"error":{"type":"request_error","code":"bad_request","detail":"Invalid request.",` +
+			`"errors":[{"field":"transaction_id","message":"invalid input"}]}}`,
+	}
+	got := FriendlyErrorMessage(apiErr)
+	want := "Invalid request. (bad_request); transaction_id: invalid input"
+	if got != want {
+		t.Errorf("FriendlyErrorMessage = %q, want %q", got, want)
+	}
+}
+
+func TestFriendlyErrorMessage_MultipleFieldErrorsAllIncluded(t *testing.T) {
+	apiErr := &APIError{
+		StatusCode: 400,
+		Body: `{"error":{"detail":"Invalid request.","errors":[` +
+			`{"field":"a","message":"bad a"},{"field":"b","message":"bad b"}]}}`,
+	}
+	got := FriendlyErrorMessage(apiErr)
+	want := "Invalid request.; a: bad a; b: bad b"
+	if got != want {
+		t.Errorf("FriendlyErrorMessage = %q, want %q", got, want)
+	}
+}
+
+func TestFriendlyErrorMessage_NoFieldErrorsUnchanged(t *testing.T) {
+	// Confirms the addition doesn't alter output for the common case
+	// (no "errors" array at all) — every existing caller's expectations
+	// stay intact.
+	apiErr := &APIError{StatusCode: 400, Body: `{"error":{"detail":"bad request","code":"invalid_currency_code"}}`}
+	got := FriendlyErrorMessage(apiErr)
+	want := "bad request (invalid_currency_code)"
+	if got != want {
+		t.Errorf("FriendlyErrorMessage = %q, want %q", got, want)
+	}
+}

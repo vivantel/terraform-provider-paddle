@@ -154,15 +154,30 @@ func countMatchingAdjustments(t *testing.T, c *client.Client, transactionID, rea
 // past_due, which the manually-collected "billed" fixture above already
 // satisfies without needing a real captured payment.
 func TestAccPaddleAdjustment_basic(t *testing.T) {
+	testAccPreCheck(t)
 	c := newTestAccClient()
-	var transactionID string
 	reason := "Acc Test adjustment " + randAccTestSuffix()
 
+	// Deliberately created *before* resource.Test() is called, not inside
+	// PreCheck — this was a real bug, found running against the real
+	// sandbox (2026-08-11): resource.TestCase's Steps slice literal
+	// (built below) is evaluated immediately, before PreCheck ever runs.
+	// Building `Config: testAccAdjustmentConfig(transactionID, ...)` while
+	// transactionID was still only set inside PreCheck meant every
+	// Config baked in an empty transaction_id, always — the fixture
+	// itself was created successfully, just never actually used, and
+	// every apply searched/created against "" instead. Same class of bug
+	// action_paddle_subscription_acc_test.go's findTestSubscription
+	// comment already documents avoiding, for the same underlying reason
+	// (Go closures over a struct literal's fields don't defer
+	// evaluation the way a function call's arguments don't either) —
+	// missed here because this test creates its own fixture instead of
+	// just looking one up, and that distinction didn't register at the
+	// time as the same hazard.
+	transactionID := createAdjustmentFixtureTransaction(t, c)
+
 	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			testAccPreCheck(t)
-			transactionID = createAdjustmentFixtureTransaction(t, c)
-		},
+		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		TerraformVersionChecks: []tfversion.TerraformVersionCheck{
 			tfversion.SkipBelow(version.Must(version.NewVersion("1.14.0"))),
