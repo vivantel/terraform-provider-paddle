@@ -617,3 +617,74 @@ func TestTransactionCancelPatchJSON_OnlyStatusField(t *testing.T) {
 	}
 	assertJSONEqual(t, b, `{"status":"canceled"}`)
 }
+
+func TestTransactionJSON_ItemsPriceIsNestedNotFlat(t *testing.T) {
+	// Confirms the real response shape, 2026-08-11: Transaction.Items'
+	// price reference is nested under "price": {"id": ...}, not a flat
+	// "price_id" field — this was assumed flat for most of this
+	// session, silently breaking paddle_subscription_charge's item-set
+	// matching the whole time (see TransactionItem's own comment).
+	body := `{
+		"id": "txn_01abc",
+		"status": "completed",
+		"origin": "subscription_charge",
+		"items": [
+			{"price": {"id": "pri_01abc"}, "quantity": 2}
+		]
+	}`
+	var txn Transaction
+	if err := json.Unmarshal([]byte(body), &txn); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if len(txn.Items) != 1 {
+		t.Fatalf("len(Items) = %d, want 1", len(txn.Items))
+	}
+	if txn.Items[0].Price.ID != "pri_01abc" {
+		t.Errorf("Items[0].Price.ID = %q, want %q", txn.Items[0].Price.ID, "pri_01abc")
+	}
+	if txn.Items[0].Quantity != 2 {
+		t.Errorf("Items[0].Quantity = %d, want 2", txn.Items[0].Quantity)
+	}
+}
+
+func TestTransactionJSON_DetailsLineItemsHaveTheirOwnID(t *testing.T) {
+	// Confirms the separate, second item shape create-adjustment's
+	// item_id actually references — under details.line_items, a
+	// different path from the top-level items field entirely (see
+	// TransactionLineItem's own comment).
+	body := `{
+		"id": "txn_01abc",
+		"status": "billed",
+		"items": [{"price": {"id": "pri_01abc"}, "quantity": 1}],
+		"details": {
+			"line_items": [
+				{"id": "txnitm_01abc", "price_id": "pri_01abc", "quantity": 1}
+			]
+		}
+	}`
+	var txn Transaction
+	if err := json.Unmarshal([]byte(body), &txn); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if txn.Details == nil {
+		t.Fatal("Details = nil, want populated")
+	}
+	if len(txn.Details.LineItems) != 1 {
+		t.Fatalf("len(Details.LineItems) = %d, want 1", len(txn.Details.LineItems))
+	}
+	li := txn.Details.LineItems[0]
+	if li.ID != "txnitm_01abc" || li.PriceID != "pri_01abc" || li.Quantity != 1 {
+		t.Errorf("Details.LineItems[0] = %+v, want {ID:txnitm_01abc PriceID:pri_01abc Quantity:1}", li)
+	}
+}
+
+func TestTransactionJSON_DetailsNilWhenAbsent(t *testing.T) {
+	body := `{"id": "txn_01abc", "status": "billed"}`
+	var txn Transaction
+	if err := json.Unmarshal([]byte(body), &txn); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if txn.Details != nil {
+		t.Errorf("Details = %+v, want nil when absent from the response", txn.Details)
+	}
+}

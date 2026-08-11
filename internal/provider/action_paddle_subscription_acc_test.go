@@ -338,7 +338,7 @@ resource "terraform_data" "trigger" {
 		count := 0
 		for _, txn := range txns {
 			for _, item := range txn.Items {
-				if item.PriceID == price.ID && item.Quantity == 1 {
+				if item.Price.ID == price.ID && item.Quantity == 1 {
 					count++
 					break
 				}

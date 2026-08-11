@@ -157,7 +157,11 @@ func sameChargeItems(want []client.SubscriptionChargeItem, got []client.Transact
 	for _, w := range want {
 		found := -1
 		for i, g := range remaining {
-			if g.PriceID == w.PriceID && g.Quantity == w.Quantity {
+			// g.Price.ID, not a flat g.PriceID — see TransactionItem's
+			// own comment for why this was a real, previously-silent bug
+			// (always comparing against "" on the got side), not just
+			// this function's original design.
+			if g.Price.ID == w.PriceID && g.Quantity == w.Quantity {
 				found = i
 				break
 			}
@@ -200,9 +204,17 @@ func findMatchingScheduledCharge(preview *client.NextTransactionPreview, wantIte
 	if preview == nil {
 		return false
 	}
+	// NextTransactionItem.PriceID is genuinely flat (confirmed against
+	// the real API shape — the next_transaction preview is a different
+	// item shape from Transaction.Items' nested price.id, not a
+	// straight type conversion), so this builds TransactionItem values
+	// by hand rather than converting.
 	got := make([]client.TransactionItem, 0, len(preview.Items))
 	for _, item := range preview.Items {
-		got = append(got, client.TransactionItem(item))
+		var g client.TransactionItem
+		g.Price.ID = item.PriceID
+		g.Quantity = item.Quantity
+		got = append(got, g)
 	}
 	return sameChargeItems(wantItems, got)
 }

@@ -30,7 +30,7 @@ import (
 // docs/plans/paddle-provider-v2.md's Step 6 hit for paddle_checkout_domain,
 // just solvable here since (unlike a checkout domain) a fixture
 // transaction can be created by direct API call at all.
-func createAdjustmentFixtureTransaction(t *testing.T, c *client.Client) string {
+func createAdjustmentFixtureTransaction(t *testing.T, c *client.Client) *client.Transaction {
 	t.Helper()
 	ctx := context.Background()
 	suffix := randAccTestSuffix()
@@ -96,7 +96,7 @@ func createAdjustmentFixtureTransaction(t *testing.T, c *client.Client) string {
 		}
 		t.Fatalf("fixture CreateTransaction: %v", err)
 	}
-	return txn.ID
+	return txn
 }
 
 // testAccAdjustmentConfig's terraform_data trigger fires the action on
@@ -104,19 +104,32 @@ func createAdjustmentFixtureTransaction(t *testing.T, c *client.Client) string {
 // invoke-twice-confirm-once test below can force a second invocation by
 // changing triggerInput between steps (an in-place update, not a
 // replacement) rather than needing two separate resources.
-func testAccAdjustmentConfig(transactionID, reason, triggerInput string) string {
+//
+// itemID must be set even for a "full" adjustment — found the hard way,
+// 2026-08-11: "type: full" alone (no items array) is rejected with
+// "Items: must be greater than 0", despite the API reference's prose
+// implying items are only required for a partial adjustment. Each item
+// needs type="full" too (adjust that item's full amount); no amount
+// needed at the item level.
+func testAccAdjustmentConfig(transactionID, itemID, reason, triggerInput string) string {
 	return providerConfig + fmt.Sprintf(`
 action "paddle_adjustment" "test" {
   config {
     action         = "credit"
     type           = "full"
-    transaction_id = %q
-    reason         = %q
+    transaction_id = %[1]q
+    reason         = %[2]q
+    items = [
+      {
+        item_id = %[3]q
+        type    = "full"
+      }
+    ]
   }
 }
 
 resource "terraform_data" "trigger" {
-  input = %q
+  input = %[4]q
   lifecycle {
     action_trigger {
       events  = [after_create, after_update]
@@ -124,7 +137,7 @@ resource "terraform_data" "trigger" {
     }
   }
 }
-`, transactionID, reason, triggerInput)
+`, transactionID, reason, itemID, triggerInput)
 }
 
 // countMatchingAdjustments is shared by both steps below so a mismatch in
@@ -175,7 +188,17 @@ func TestAccPaddleAdjustment_basic(t *testing.T) {
 	// missed here because this test creates its own fixture instead of
 	// just looking one up, and that distinction didn't register at the
 	// time as the same hazard.
-	transactionID := createAdjustmentFixtureTransaction(t, c)
+	transaction := createAdjustmentFixtureTransaction(t, c)
+	// create-adjustment's item_id (txnitm_...) comes from
+	// Transaction.Details.LineItems, not the top-level Items field —
+	// found the hard way, 2026-08-11 (see client.TransactionLineItem's
+	// own comment for the full account: two different item shapes on
+	// the same Transaction object, easy to reach for the wrong one).
+	if transaction.Details == nil || len(transaction.Details.LineItems) == 0 {
+		t.Fatalf("fixture transaction %s has no Details.LineItems — can't build an itemized adjustment", transaction.ID)
+	}
+	transactionID := transaction.ID
+	itemID := transaction.Details.LineItems[0].ID
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -185,7 +208,7 @@ func TestAccPaddleAdjustment_basic(t *testing.T) {
 		},
 		Steps: []resource.TestStep{
 			{
-				Config: testAccAdjustmentConfig(transactionID, reason, "v1"),
+				Config: testAccAdjustmentConfig(transactionID, itemID, reason, "v1"),
 				PostApplyFunc: func() {
 					if got := countMatchingAdjustments(t, c, transactionID, reason); got != 1 {
 						t.Errorf("adjustments matching reason %q for transaction %s = %d, want exactly 1 after the first invoke", reason, transactionID, got)
@@ -197,7 +220,7 @@ func TestAccPaddleAdjustment_basic(t *testing.T) {
 				// after_update — search-before-invoke must recognize the
 				// adjustment already created in the previous step and
 				// skip, not create a second one.
-				Config: testAccAdjustmentConfig(transactionID, reason, "v2"),
+				Config: testAccAdjustmentConfig(transactionID, itemID, reason, "v2"),
 				PostApplyFunc: func() {
 					if got := countMatchingAdjustments(t, c, transactionID, reason); got != 1 {
 						t.Errorf("adjustments matching reason %q for transaction %s = %d, want exactly 1 after a second invoke (search-before-invoke should have prevented a duplicate)", reason, transactionID, got)

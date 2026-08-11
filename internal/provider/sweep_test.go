@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -125,16 +126,37 @@ func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txn client
 	// every one of these (real-world) subscription-charge transactions,
 	// which are auto-collected and therefore "completed" (paid) by the
 	// time this sweeper runs, not "billed" — "credit" doesn't apply to an
-	// already-paid transaction. type="full" needs no items either way.
+	// already-paid transaction.
 	action := "credit"
 	if txn.Status == "completed" {
 		action = "refund"
 	}
-	_, err := c.CreateAdjustment(ctx, client.Adjustment{
+	// Items must be listed explicitly even for a full adjustment — found
+	// the hard way, 2026-08-11: "type: full" alone (no items array) was
+	// rejected twice in a row with "Items: must be greater than 0",
+	// despite the API reference's prose implying items are only required
+	// for a partial adjustment. The item_id each entry needs is on
+	// Transaction.Details.LineItems, not the top-level Items field this
+	// txn value already has (see client.TransactionLineItem's comment) —
+	// re-fetched per transaction via GetTransaction rather than assumed
+	// present on whatever list call found this txn in the first place.
+	full, err := c.GetTransaction(ctx, txn.ID)
+	if err != nil {
+		return fmt.Errorf("fetching full transaction detail for item IDs: %w", err)
+	}
+	var items []client.AdjustmentItem
+	if full.Details != nil {
+		items = make([]client.AdjustmentItem, 0, len(full.Details.LineItems))
+		for _, item := range full.Details.LineItems {
+			items = append(items, client.AdjustmentItem{ItemID: item.ID, Type: "full"})
+		}
+	}
+	_, err = c.CreateAdjustment(ctx, client.Adjustment{
 		Action:        action,
 		Type:          "full",
 		TransactionID: txn.ID,
 		Reason:        "sweeper cleanup of a leaked test fixture transaction",
+		Items:         items,
 	})
 	if client.IsNotFound(err) {
 		return nil

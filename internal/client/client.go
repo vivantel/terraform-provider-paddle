@@ -1284,17 +1284,53 @@ func (c *Client) ChargeSubscription(ctx context.Context, id string, req Subscrip
 // compares are modeled (see SubscriptionChargeItem's comment on why
 // items are catalog-price-only here too).
 
+// TransactionItem is one entry of Transaction.Items — Paddle nests the
+// price reference under `price.id`, not a flat `price_id` field.
+// Confirmed against two independent official Paddle SDKs (Node, Python),
+// 2026-08-11, after this field was assumed flat and silently always
+// empty for this whole session — a real, foundational bug in
+// paddle_subscription_charge's item-set matching that no amount of
+// retrying could have fixed, since the comparison was never looking at
+// the right field at all, not a timing problem.
+// TransactionItemPrice is a named (not anonymous) type so callers outside
+// this package — test code building a TransactionItem literal — don't
+// need to spell out the inline struct shape themselves.
+type TransactionItemPrice struct {
+	ID string `json:"id"`
+}
+
 type TransactionItem struct {
+	Price    TransactionItemPrice `json:"price"`
+	Quantity int64                `json:"quantity"`
+}
+
+// TransactionLineItem is a *different* item shape from TransactionItem
+// above — found the hard way, 2026-08-11, chasing why create-adjustment
+// rejected a "type: full" request with "Items: must be greater than 0"
+// despite Paddle's own official SDK types showing a full adjustment
+// needs no items at all. The real per-item id (txnitm_...) that
+// create-adjustment's item_id references isn't on Transaction.Items at
+// all — it's under Transaction.Details.LineItems, a separate, fully
+// -calculated breakdown (confirmed against the Python SDK's
+// TransactionDetails/TransactionLineItem, which decode the response's
+// `details.line_items` field, distinct from the top-level `items`).
+type TransactionLineItem struct {
+	ID       string `json:"id,omitempty"`
 	PriceID  string `json:"price_id,omitempty"`
 	Quantity int64  `json:"quantity,omitempty"`
 }
 
+type TransactionDetails struct {
+	LineItems []TransactionLineItem `json:"line_items,omitempty"`
+}
+
 type Transaction struct {
-	ID             string            `json:"id,omitempty"`
-	SubscriptionID string            `json:"subscription_id,omitempty"`
-	Status         string            `json:"status,omitempty"`
-	Origin         string            `json:"origin,omitempty"`
-	Items          []TransactionItem `json:"items,omitempty"`
+	ID             string              `json:"id,omitempty"`
+	SubscriptionID string              `json:"subscription_id,omitempty"`
+	Status         string              `json:"status,omitempty"`
+	Origin         string              `json:"origin,omitempty"`
+	Items          []TransactionItem   `json:"items,omitempty"`
+	Details        *TransactionDetails `json:"details,omitempty"`
 }
 
 type transactionListEnvelope struct {
@@ -1502,6 +1538,24 @@ type transactionCreateResponseEnvelope struct {
 func (c *Client) CreateTransaction(ctx context.Context, t TransactionCreate) (*Transaction, error) {
 	var env transactionCreateResponseEnvelope
 	if err := c.do(ctx, http.MethodPost, "/transactions", t, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// GetTransaction fetches a single transaction, including Details.LineItems
+// — used to get item_id values for a sweep-cleanup adjustment
+// (cancelOrCreditTransaction in internal/provider/sweep_test.go), fetched
+// per-transaction rather than assumed present on a list response, since
+// whether ListTransactionsByCustomer/ListSubscriptionChargeTransactions
+// also carry Details by default wasn't confirmed and this data matters
+// for a call that (if the item_id turns out wrong) risks a real,
+// hard-to-undo mistake — worth one extra request per transaction to be
+// sure, in code that only ever runs against a handful of leaked test
+// fixtures, not a hot path.
+func (c *Client) GetTransaction(ctx context.Context, id string) (*Transaction, error) {
+	var env transactionCreateResponseEnvelope
+	if err := c.do(ctx, http.MethodGet, "/transactions/"+id, nil, &env); err != nil {
 		return nil, err
 	}
 	return &env.Data, nil
