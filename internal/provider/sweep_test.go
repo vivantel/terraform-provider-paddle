@@ -284,7 +284,14 @@ func sweepTestSubscriptionCharges(_ string) error {
 	for _, txn := range txns {
 		matched++
 		if err := cancelOrCreditTransaction(ctx, c, txn); err != nil {
-			log.Printf("[WARN] failed to cancel/credit leaked subscription-charge transaction %s (subscription %s): %s", txn.ID, subID, err)
+			// status included — diagnostic added 2026-08-11 after a real
+			// sweep run showed every failure taking ~120s (a full
+			// retry-with-backoff cycle each on CancelTransaction *and*
+			// GetTransaction), which shouldAttemptCancel's "completed"
+			// skip should have halved to ~60s if these transactions are
+			// really all "completed" as assumed — this makes the actual
+			// status visible in the log instead of guessing.
+			log.Printf("[WARN] failed to cancel/credit leaked subscription-charge transaction %s (status %q, subscription %s): %s", txn.ID, txn.Status, subID, err)
 			continue
 		}
 		swept++
