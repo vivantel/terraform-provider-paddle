@@ -185,7 +185,7 @@ func (a *AdjustmentAction) Invoke(ctx context.Context, req action.InvokeRequest,
 		// generic to diagnose from CI logs alone. err.Error() includes
 		// the full raw response body via *client.APIError.Error(). Revert
 		// to FriendlyErrorMessage alone once the real cause is found.
-		resp.Diagnostics.AddError("Error searching existing Paddle adjustments", client.FriendlyErrorMessage(err)+" | raw: "+err.Error())
+		resp.Diagnostics.AddError("Error searching existing Paddle adjustments", fmt.Sprintf("transaction_id sent: %q | %s | raw: %s", config.TransactionID.ValueString(), client.FriendlyErrorMessage(err), err.Error()))
 		return
 	}
 	if match := findMatchingAdjustment(existing, wantAction, wantReason, wantType); match != nil {
