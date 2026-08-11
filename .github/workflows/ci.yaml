@@ -74,6 +74,11 @@ jobs:
           # secret once a real sandbox checkout has produced a
           # subscription to pin (README.md's Actions section).
           PADDLE_TEST_SUBSCRIPTION_ID: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID }}
+          # Same pattern, a second dedicated subscription pinned
+          # specifically for TestAccPaddleSubscriptionCancel_alreadyCanceledShortCircuits
+          # — see findCanceledTestSubscription's comment for why this
+          # can't reuse PADDLE_TEST_SUBSCRIPTION_ID above.
+          PADDLE_TEST_CANCELED_SUBSCRIPTION_ID: ${{ secrets.PADDLE_TEST_CANCELED_SUBSCRIPTION_ID }}
         # docs/decisions/0003-acceptance-tests-against-live-sandbox.md:
         # every TestAcc* test's testAccPreCheck skips (not fails) when
         # PADDLE_API_KEY is unset. GitHub doesn't inject repo secrets into
