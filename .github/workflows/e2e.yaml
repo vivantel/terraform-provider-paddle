@@ -54,6 +54,15 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Job-level, not step-level: GitHub Actions' `if:` conditionals
+      # cannot reference the `secrets` context at all ("Unrecognized
+      # named-value: 'secrets'", confirmed the hard way via
+      # `gh workflow run --ref` against this exact file) — only `env`,
+      # `github`, `vars`, etc. are available there. Mirroring the secret
+      # into a job-level env var here is what makes the action-coverage
+      # step's `if:` below actually valid.
+      PADDLE_TEST_SUBSCRIPTION_ID: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID }}
     steps:
       - uses: hashicorp/setup-terraform@v4
         with:
@@ -157,9 +166,7 @@ jobs:
           EOF
 
       - name: Append action coverage (pause/resume, if a pinned subscription is configured)
-        if: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
-        env:
-          PADDLE_TEST_SUBSCRIPTION_ID: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID }}
+        if: ${{ env.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
         run: |
           cat >> /tmp/e2e-published/main.tf <<EOF
 
