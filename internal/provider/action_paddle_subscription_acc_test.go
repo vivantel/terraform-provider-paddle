@@ -371,3 +371,108 @@ resource "terraform_data" "trigger" {
 		},
 	})
 }
+
+// TestAccPaddleSubscriptionCharge_nextBillingPeriod_roundTrip is the
+// next_billing_period counterpart to the "immediately" test above — added
+// 2026-08-11 once the real root cause of the earlier next_billing_period
+// uncertainty was found and fixed (Transaction.Items' price is nested
+// under price.id, not flat — see client.TransactionItem's own comment;
+// the retry-with-backoff already in findMatchingScheduledCharge was a
+// real improvement but wasn't the actual bug). Same invoke-twice
+// -confirm-once structure, verified against
+// GetSubscriptionNextTransaction's renewal preview instead of
+// ListSubscriptionChargeTransactions, since a next_billing_period charge
+// creates no queryable transaction until the subscription actually
+// renews (see findMatchingScheduledCharge's own comment).
+func TestAccPaddleSubscriptionCharge_nextBillingPeriod_roundTrip(t *testing.T) {
+	testAccPreCheck(t)
+	c := newTestAccClient()
+	sub := findTestSubscription(t, c, "active")
+	if sub == nil {
+		t.Skip("no active subscription found in the sandbox account — skipping (see findTestSubscription's comment on why this test can't self-provision one)")
+	}
+
+	suffix := randAccTestSuffix()
+	ctx := context.Background()
+	prod, err := c.CreateProduct(ctx, client.Product{Name: "Acc Test Charge Fixture " + suffix, TaxCategory: "standard"})
+	if err != nil {
+		t.Fatalf("fixture CreateProduct: %v", err)
+	}
+	price, err := c.CreatePrice(ctx, client.Price{
+		ProductID:   prod.ID,
+		Description: "Acc Test Charge Fixture " + suffix,
+		UnitPrice:   client.Money{Amount: "500", CurrencyCode: "USD"},
+	})
+	if err != nil {
+		t.Fatalf("fixture CreatePrice: %v", err)
+	}
+
+	config := func(triggerInput string) string {
+		return providerConfig + fmt.Sprintf(`
+action "paddle_subscription_charge" "test" {
+  config {
+    subscription_id = %[1]q
+    effective_from  = "next_billing_period"
+    items = [
+      {
+        price_id = %[2]q
+        quantity = 1
+      }
+    ]
+  }
+}
+
+resource "terraform_data" "trigger" {
+  input = %[3]q
+  lifecycle {
+    action_trigger {
+      events  = [after_create, after_update]
+      actions = [action.paddle_subscription_charge.test]
+    }
+  }
+}
+`, sub.ID, price.ID, triggerInput)
+	}
+
+	countQueuedCharges := func() int {
+		t.Helper()
+		preview, err := c.GetSubscriptionNextTransaction(context.Background(), sub.ID)
+		if err != nil {
+			t.Fatalf("GetSubscriptionNextTransaction: %v", err)
+		}
+		if preview == nil {
+			return 0
+		}
+		count := 0
+		for _, item := range preview.Items {
+			if item.PriceID == price.ID && item.Quantity == 1 {
+				count++
+			}
+		}
+		return count
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		TerraformVersionChecks:   tfVersionChecksActions,
+		Steps: []resource.TestStep{
+			{
+				Config: config("v1"),
+				PostApplyFunc: func() {
+					if got := countQueuedCharges(); got != 1 {
+						t.Errorf("queued charges matching price %s on subscription %s = %d, want exactly 1 after the first invoke", price.ID, sub.ID, got)
+					}
+				},
+			},
+			{
+				Config: config("v2"),
+				PostApplyFunc: func() {
+					if got := countQueuedCharges(); got != 1 {
+						t.Errorf("queued charges matching price %s on subscription %s = %d, want exactly 1 after a second invoke (search-before-invoke should have prevented a duplicate)", price.ID, sub.ID, got)
+					}
+				},
+			},
+		},
+	})
+}
