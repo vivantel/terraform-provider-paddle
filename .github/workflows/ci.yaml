@@ -63,6 +63,17 @@ jobs:
         env:
           TF_ACC: "1"
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          # Pins the subscription action tests
+          # (action_paddle_subscription_acc_test.go) to one specific,
+          # deliberately-provisioned sandbox subscription rather than
+          # "whatever this account happens to have" — see
+          # findTestSubscription's comment. An unset/undefined secret
+          # evaluates to an empty string here, which the Go side already
+          # treats as "fall back to searching the account" — safe to wire
+          # up before the secret exists. Add the real value as a repo
+          # secret once a real sandbox checkout has produced a
+          # subscription to pin (README.md's Actions section).
+          PADDLE_TEST_SUBSCRIPTION_ID: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID }}
         # docs/decisions/0003-acceptance-tests-against-live-sandbox.md:
         # every TestAcc* test's testAccPreCheck skips (not fails) when
         # PADDLE_API_KEY is unset. GitHub doesn't inject repo secrets into

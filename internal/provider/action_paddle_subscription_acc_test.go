@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"testing"
 
@@ -17,21 +18,51 @@ var tfVersionChecksActions = []tfversion.TerraformVersionCheck{
 	tfversion.SkipBelow(version.Must(version.NewVersion("1.14.0"))),
 }
 
-// findSubscriptionByStatus is shared by every subscription action test
-// below — subscriptions can't be created via pure API calls at all
-// (confirmed 2026-08-10: only a real checkout + a test card produces one),
-// so none of these tests can self-provision a fixture the way every other
-// test in this repo does. Same pattern
-// docs/plans/paddle-provider-v2.md Step 6 established for
-// paddle_checkout_domain (see TestAccPaddleCheckoutDomainDataSource_basic):
-// the lookup and skip happen *before* resource.Test is called, in the test
-// function body, not inside PreCheck — Config strings are plain Go
-// strings built once when the resource.TestCase struct literal is
-// evaluated, before PreCheck ever runs, so a value only known after a
-// dynamic lookup can't be threaded through PreCheck the way it can here.
-func findSubscriptionByStatus(t *testing.T, c *client.Client, status string) *client.Subscription {
+// findTestSubscription is shared by every subscription action test below
+// — subscriptions can't be created via pure API calls at all (confirmed
+// 2026-08-10: only a real checkout + a test card produces one), so none
+// of these tests can self-provision a fixture the way every other test in
+// this repo does. Same pattern docs/plans/paddle-provider-v2.md Step 6
+// established for paddle_checkout_domain (see
+// TestAccPaddleCheckoutDomainDataSource_basic): the lookup and skip
+// happen *before* resource.Test is called, in the test function body,
+// not inside PreCheck — Config strings are plain Go strings built once
+// when the resource.TestCase struct literal is evaluated, before PreCheck
+// ever runs, so a value only known after a dynamic lookup can't be
+// threaded through PreCheck the way it can here.
+//
+// Two modes, in priority order:
+//
+//  1. PADDLE_TEST_SUBSCRIPTION_ID set: fetch that exact subscription and
+//     use it only if its current status matches — a deliberately pinned,
+//     recognizable fixture (a specific test customer/subscription created
+//     once via a real sandbox checkout) rather than "whatever this
+//     account happens to have lying around". Skips cleanly, with the
+//     subscription's actual current status in the message, if it isn't
+//     currently in the wanted state (e.g. a previous pause/resume run
+//     left it somewhere unexpected) — never silently falls back to
+//     searching the whole account instead once a specific ID is pinned,
+//     since that would defeat the point of pinning one.
+//  2. Unset: list every subscription in the account and use the first
+//     one matching the wanted status — the original, less predictable
+//     behavior, kept as a fallback for environments that haven't pinned
+//     one yet.
+func findTestSubscription(t *testing.T, c *client.Client, status string) *client.Subscription {
 	t.Helper()
-	subs, err := c.ListSubscriptions(context.Background())
+	ctx := context.Background()
+
+	if id := os.Getenv("PADDLE_TEST_SUBSCRIPTION_ID"); id != "" {
+		sub, err := c.GetSubscription(ctx, id)
+		if err != nil {
+			t.Fatalf("GetSubscription(%q) (from PADDLE_TEST_SUBSCRIPTION_ID): %v", id, err)
+		}
+		if sub.Status != status {
+			t.Skipf("PADDLE_TEST_SUBSCRIPTION_ID=%s is currently %q, want %q for this test — leave it to settle back (pause/resume tests always return it to active) or wait for another test run, rather than pointing this test at a different subscription instead", id, sub.Status, status)
+		}
+		return sub
+	}
+
+	subs, err := c.ListSubscriptions(ctx)
 	if err != nil {
 		t.Fatalf("ListSubscriptions: %v", err)
 	}
@@ -93,9 +124,9 @@ resource "terraform_data" "trigger" {
 func TestAccPaddleSubscriptionCancel_alreadyCanceledShortCircuits(t *testing.T) {
 	testAccPreCheck(t)
 	c := newTestAccClient()
-	sub := findSubscriptionByStatus(t, c, "canceled")
+	sub := findTestSubscription(t, c, "canceled")
 	if sub == nil {
-		t.Skip("no already-canceled subscription found in the sandbox account — skipping (see findSubscriptionByStatus's comment on why this test can't self-provision one)")
+		t.Skip("no already-canceled subscription found in the sandbox account — skipping (see findTestSubscription's comment on why this test can't self-provision one)")
 	}
 
 	resource.Test(t, resource.TestCase{
@@ -141,9 +172,9 @@ resource "terraform_data" "trigger" {
 func TestAccPaddleSubscriptionPauseResume_roundTrip(t *testing.T) {
 	testAccPreCheck(t)
 	c := newTestAccClient()
-	sub := findSubscriptionByStatus(t, c, "active")
+	sub := findTestSubscription(t, c, "active")
 	if sub == nil {
-		t.Skip("no active subscription found in the sandbox account — skipping (see findSubscriptionByStatus's comment on why this test can't self-provision one)")
+		t.Skip("no active subscription found in the sandbox account — skipping (see findTestSubscription's comment on why this test can't self-provision one)")
 	}
 
 	pauseConfig := providerConfig + fmt.Sprintf(`
@@ -234,9 +265,9 @@ resource "terraform_data" "trigger" {
 func TestAccPaddleSubscriptionCharge_roundTrip(t *testing.T) {
 	testAccPreCheck(t)
 	c := newTestAccClient()
-	sub := findSubscriptionByStatus(t, c, "active")
+	sub := findTestSubscription(t, c, "active")
 	if sub == nil {
-		t.Skip("no active subscription found in the sandbox account — skipping (see findSubscriptionByStatus's comment on why this test can't self-provision one)")
+		t.Skip("no active subscription found in the sandbox account — skipping (see findTestSubscription's comment on why this test can't self-provision one)")
 	}
 
 	suffix := randAccTestSuffix()

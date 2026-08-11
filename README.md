@@ -116,7 +116,13 @@ resource "terraform_data" "trigger" {
 }
 ```
 
-**Testing note**: this provider's own acceptance tests for the subscription actions (`cancel`/`pause`/`resume`/`charge`) can't self-provision a subscription fixture — Paddle subscriptions can only be created via a real checkout with a test card, no pure-API path exists, even in sandbox. If you're contributing to this provider, those tests skip cleanly unless the sandbox account already has a subscription in the relevant state (see `internal/provider/action_paddle_subscription_acc_test.go`); provisioning one via a real sandbox checkout is a manual, one-time step, same as `paddle_checkout_domain`'s dashboard-approval precondition above.
+**Testing note**: this provider's own acceptance tests for the subscription actions (`cancel`/`pause`/`resume`/`charge`) can't self-provision a subscription fixture — Paddle subscriptions can only be created via a real checkout with a test card, no pure-API path exists, even in sandbox. Provisioning one via a real sandbox checkout is a manual, one-time step, same as `paddle_checkout_domain`'s dashboard-approval precondition above:
+
+1. Create a recurring (has a billing cycle) catalog price in the sandbox, if you don't have one already.
+2. Complete a real checkout against it with a [test card](https://developer.paddle.com/concepts/payment-methods/credit-debit-card#test-cards) (e.g. `4242 4242 4242 4242`, any future expiry/CVC) — any customer email works, sandbox only, no real charge.
+3. Note the resulting subscription's ID (`sub_...`, visible in the dashboard or via `GET /subscriptions`) and set it as `PADDLE_TEST_SUBSCRIPTION_ID`, either as a local env var or as a repo secret for CI (`.github/workflows/ci.yaml` already passes it through).
+
+With that set, `internal/provider/action_paddle_subscription_acc_test.go`'s tests target that exact, recognizable subscription rather than searching the account for "whatever's in the right status" — set once, reused indefinitely: nothing in this repo sweeps subscriptions (there's no `paddle_subscription` resource to sweep), and the pause/resume/charge tests always leave it back in `active`, so it never needs recreating. Without `PADDLE_TEST_SUBSCRIPTION_ID` set, these tests fall back to searching the account for any subscription in the right status, and skip cleanly if none exists.
 
 `TestAccPaddleAdjustment_basic` self-provisions its own fixture transaction, but needs one manual, one-time sandbox account setting first, **found by running this test against the real sandbox** (2026-08-10, `feat/v3-lifecycle-actions` PR CI): Paddle rejects *any* transaction creation via the API — even a fully manual, non-checkout one — until the account has a default payment link set (Paddle dashboard → **Checkout** → your default pay link). Without it, this test skips cleanly with a message pointing here rather than failing.
 
