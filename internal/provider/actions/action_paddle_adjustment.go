@@ -179,7 +179,13 @@ func (a *AdjustmentAction) Invoke(ctx context.Context, req action.InvokeRequest,
 
 	existing, err := a.client.ListAdjustments(ctx, config.TransactionID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("Error searching existing Paddle adjustments", client.FriendlyErrorMessage(err))
+		// TEMPORARY debug aid, 2026-08-11: FriendlyErrorMessage only
+		// surfaces error.detail/error.code, which for this specific
+		// failure is just "Invalid request. (bad_request)" -- too
+		// generic to diagnose from CI logs alone. err.Error() includes
+		// the full raw response body via *client.APIError.Error(). Revert
+		// to FriendlyErrorMessage alone once the real cause is found.
+		resp.Diagnostics.AddError("Error searching existing Paddle adjustments", client.FriendlyErrorMessage(err)+" | raw: "+err.Error())
 		return
 	}
 	if match := findMatchingAdjustment(existing, wantAction, wantReason, wantType); match != nil {
