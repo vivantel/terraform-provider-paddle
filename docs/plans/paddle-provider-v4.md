@@ -1,9 +1,11 @@
 ---
 title: Implementation plan — terraform-provider-paddle v4
-status: not started — 2026-08-11. Interviewed and scoped via /kms:roadmap
+status: done — 2026-08-11. Interviewed and scoped via /kms:roadmap
   immediately after v0.4.0 shipped and was reviewed as a product; every
-  decision below was made with the user before any code was written. Ships
-  as v0.5.0 (see the version-numbering note below).
+  decision below was made with the user before any code was written.
+  Implemented, real-sandbox-verified (PRs #19-#24), and shipped as
+  v0.5.0 (see the version-numbering note below and this file's
+  "Definition of done" section for the full evidence trail).
 date: 2026-08-11
 tags: [paddle, provider, plan, v4, data-sources]
 ---
@@ -124,6 +126,14 @@ implements. Regenerate docs via `tfplugindocs generate` after any schema
 change and confirm `git diff --exit-code -- docs/` locally before pushing.
 
 ---
+
+**Post-hoc note (2026-08-11, once sandbox access became available via
+CI)**: every step below was written mid-implementation, when "sandbox
+verification pending" was accurate. It no longer is — see this file's
+"Definition of done" section at the bottom for the real, PR-linked
+verification evidence for all six steps. The per-step `Status:` lines
+below are left as-written (a historical record of what was known at each
+point), not retroactively edited.
 
 ## Step 1: centralized line-item-shape resolution helper
 
@@ -558,46 +568,83 @@ nothing here has actually been run against one either).
 
 ## Definition of done for this plan
 
-**Current status (2026-08-11): Steps 1-7 implemented; NOT yet fully
-done.** This session had no `PADDLE_API_KEY` for the real sandbox — user
-chose "implement + unit test only" over providing a key or deferring to
-CI (see conversation) — so every real-sandbox verification item below is
-still open. Don't read any step's "implemented, unit-tested" status line
-above as "done" for this plan's own bar; re-run the acceptance suite
-against a real sandbox key before treating this as shippable.
+**Final status (2026-08-11): done.** What started as "implement + unit
+test only" (no `PADDLE_API_KEY` in the original session) was fully
+closed out across a sequence of follow-up PRs once real sandbox access
+became available via CI — every item below now has real, checkable
+evidence, not just an assertion.
 
-- [x] Steps 1-6 all implemented, each with its own `Status:` line above.
-      Not yet "done" in the plan's original sense (real verification
-      evidence, test output/CI run URL) — that's the sandbox-run item
-      below, still open.
+- [x] Steps 1-6 all implemented and real-sandbox-verified. PR #19 (merge
+      commit `6e5cb1b`) shipped the full v4 feature set with 10
+      code-review findings already fixed pre-merge (TDD: red confirmed,
+      then the fix, then green, for every finding backed by real logic).
 - [x] `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
-      `golangci-lint run ./...` all clean — confirmed this session.
-- [x] `tfplugindocs generate` produces no diff on already-generated docs
-      files; five new data source doc files added
-      (`docs/data-sources/{subscription,transaction,customer,events,notification}.md`) —
-      confirmed this session.
-- [ ] Every new data source verified against the real sandbox via
-      `TF_ACC=1 PADDLE_API_KEY=... go test ./... -run TestAcc -v`, not
-      just unit-tested — per
-      `docs/decisions/0003-acceptance-tests-against-live-sandbox.md`, a
-      resource/feature isn't done until confirmed against the real
-      Paddle sandbox. **Open** — acceptance test files exist for every
-      new data source (`{subscription,transaction,customer,events,notification}_data_source_acc_test.go`)
-      but have not been run.
-- [ ] `.github/workflows/e2e.yaml`'s new action-coverage step actually
-      triggered once (push/PR merge, then `workflow_dispatch` or the
-      daily schedule) and confirmed passing in that job's log — per
-      Step 6's own "Definition of done", "the YAML looks right" isn't
-      the same as "it actually ran". **Open.**
-- [ ] `CHANGELOG.md` gets a `[0.5.0]` entry (via `/kms:changelog`, follow
-      `docs/skills/release-with-kms-changelog.md`). **Open** —
-      deliberately not done in this session; a changelog entry
-      documents what shipped, and nothing here has shipped (sandbox-
-      verified) yet.
-- [ ] Tagged and pushed as `v0.5.0` (not `v4.0.0` — see the
-      version-numbering note at the top of this file), release verified
+      `golangci-lint run ./...` all clean — confirmed repeatedly across
+      every PR's CI `build`/`lint` jobs, and again locally on final
+      `master` before tagging.
+- [x] `tfplugindocs generate` produces no diff — confirmed via every PR's
+      `docs` CI job (`git diff --exit-code -- docs/`) and locally before
+      tagging. Five new data source doc files shipped:
+      `docs/data-sources/{subscription,transaction,customer,events,notification}.md`.
+- [x] Every new data source verified against the real sandbox via CI's
+      `acceptance` job (`TF_ACC=1 PADDLE_API_KEY=... go test ./... -run
+      TestAcc -v`) — not just unit-tested. Real passing runs:
+      PR #19 (run `31526895540`) exercised
+      `TestAccPaddleSubscriptionDataSource_{byID,byFilter}`,
+      `TestAccPaddleTransactionDataSource_{feedsAdjustment,byFilter}`,
+      `TestAccPaddleCustomerDataSource_byIDAndEmail`,
+      `TestAccPaddleEventsDataSource_productCreated`, and
+      `TestAccPaddleNotificationDataSource_basic` (the `_byFilter`
+      variant skipped that run — no unambiguous notification existed
+      yet). PR #20 (run `31540271382`, after a manually-created
+      permanent `notification_setting` fixture) confirmed
+      `TestAccPaddleNotificationDataSource_basic` passes for real
+      end-to-end, not just its empty-account skip path — see
+      README.md's new `paddle_notification` precondition paragraph for
+      how that fixture was set up.
+- [x] `.github/workflows/e2e.yaml`'s new action-coverage step actually
+      triggered and confirmed passing in the job's log — twice.
+      `workflow_dispatch` run `31526299732` first surfaced a real
+      concurrency bug (pause/resume racing within one `terraform apply`
+      despite a `depends_on` between them, confirmed via the log's
+      "Action started" timestamps 2ms apart, leaving the real pinned
+      subscription stuck `paused`). Fixed by splitting pause/resume into
+      two genuinely separate `terraform apply` invocations; re-dispatch
+      run `31526558851` confirmed the fix — pause found it already
+      paused (no-op), resume then ran in a separate process and set it
+      back to `active`, log-confirmed
+      (`"Subscription *** resume requested (status now active)"`).
+- [x] `CHANGELOG.md` gets a `[0.5.0]` entry — added once all of the above
+      was actually verified, not before (see the entry itself for what's
+      listed).
+- [x] Tagged and pushed as `v0.5.0` (not `v4.0.0`), release verified
       non-prerelease, Registry ingestion confirmed, and a real
       `terraform init`/`validate` smoke test run against the actual
-      published artifact — same standard `docs/plans/paddle-provider-v3.md`'s
-      final steps set. **Open**, blocked on the sandbox verification
-      item above — don't tag a release before that's confirmed.
+      published artifact. See the `v0.5.0` CHANGELOG entry and the
+      `release`/`registry-smoke-test` workflow runs it links for the
+      evidence trail.
+
+### Follow-up work this plan's own execution surfaced (all closed before
+### tagging)
+
+Real sandbox use (not code review) found four more issues, each fixed in
+its own PR before this plan was called done:
+
+- PR #21/#22: `createAdjustmentFixtureTransaction`'s customer/transaction
+  (then product/price) fixtures had no per-test cleanup, only a weekly
+  sweep — inconsistent with this repo's own stated sweeper design
+  (`docs/decisions/0009`: sweepers are a crash safety net, not primary
+  cleanup). Fixed with `t.Cleanup`, plus a `tooRecentToSweep` age guard
+  against the sweeper and an in-flight test racing over the same live
+  sandbox account.
+- PR #23: a real `sweep.yaml` run against the backlog these accumulated
+  before the above fix landed died on `go test`'s own default 10-minute
+  internal timeout (`*** Test killed with quit: ran too long (11m0s)`).
+  Fixed with an explicit `-timeout=30m`.
+- PR #24: even with more time, the sweep was burning a full ~60s
+  retry-with-backoff cycle per leaked transaction on a `CancelTransaction`
+  call *guaranteed* to fail (every leaked subscription-charge transaction
+  is already `completed`, never cancelable) before falling through to
+  the working credit/refund path — observed live as exactly ~120s per
+  transaction. Fixed with `shouldAttemptCancel`, skipping the doomed
+  attempt for `completed` transactions specifically.

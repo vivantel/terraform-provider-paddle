@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.5.0] - 2026-08-11
+
+Closes the usability gap a product review found right after `0.4.0` shipped: v3's five actions are correctly implemented and real-sandbox-verified, but every one requires an opaque Paddle ID with no discovery path inside Terraform. Adds five read-only lookup data sources so a real user can find those IDs from something they actually have on hand instead of hardcoding values found via the dashboard or a manual API call. Getting a clean release out surfaced five more real bugs — three in CI workflow logic, two in the test sweeper — all found by actually running things against the live sandbox, not by code review, and all fixed below.
+
+### Added
+
+- `paddle_subscription`, `paddle_transaction`, `paddle_customer`, `paddle_events`, and `paddle_notification` — five new read-only lookup data sources. `paddle_transaction` in particular closes `paddle_adjustment`'s sharpest edge: its `item_id` lives three different, easy-to-conflate JSON shapes deep in Paddle's raw API, now resolved through one centralized helper (`internal/client/lineitem.go`) proven against both a pre-existing call site and the new data source. `paddle_customer` carries real PII (email, name) and ships with an explicit, loud state-security warning in both its schema and a new README section — Terraform persists data source reads into state on every refresh, not just once, so "read-only" doesn't make that concern go away.
+- `.github/workflows/e2e.yaml` now also exercises `paddle_subscription_pause`/`resume` against the real published Registry binary, closing the gap where all three of `0.4.0-beta.1`'s real action bugs were only ever caught by a human manually running acceptance tests.
+
+### Fixed
+
+- `e2e.yaml`'s new action-coverage step used `secrets` in a step `if:` condition, which GitHub Actions rejects outright (a schema restriction invisible to a plain YAML parser) — the workflow file didn't even parse.
+- `e2e.yaml`'s pause/resume actions raced concurrently despite a `depends_on` between their two resources, leaving the pinned sandbox subscription stuck `paused` — `depends_on` serializes resource apply order, not the actions attached to different resources' `action_trigger`s. Fixed by splitting pause and resume into two genuinely separate `terraform apply` invocations, which do serialize.
+- `TestAccPaddleEventsDataSource_productCreated` flaked on Paddle's own event-log read-after-write lag — a product's `product.created` event wasn't always visible on the very next query. Added a retry-with-backoff wait, the same mitigation already used for `paddle_subscription_charge`'s duplicate-charge search.
+- `sweep.yaml`'s `go test` invocation hit its own default 10-minute internal timeout partway through a real backlog, dying mid-sweep. Added an explicit `-timeout=30m`.
+- The sweeper burned a full retry-with-backoff cycle (~60s) on every leaked subscription-charge transaction attempting a `CancelTransaction` call *guaranteed* to fail (these are always already `completed`, never cancelable) before falling through to the working credit/refund path — observed live as ~120s per transaction, roughly doubling real-world sweep time under sandbox rate limiting. Now skips the doomed attempt for `completed` transactions specifically.
+
+### Changed
+
+- `createAdjustmentFixtureTransaction`'s customer, address, transaction, product, and price fixtures now clean up immediately after each test (`t.Cleanup`) instead of relying solely on `sweep.yaml`'s weekly run — consistent with this repo's own stated sweeper design (sweepers as a crash safety net, not primary cleanup for a normal successful run). Previously left the sandbox account's customer/product/price counts growing by several on every CI push.
+- Added a `tooRecentToSweep` age guard (15-minute threshold) to the customer sweeper, protecting an in-flight acceptance test's fixture from a sweep that happens to fire concurrently against the same live sandbox account.
+
+### Documentation
+
+- Documented the one-time manual sandbox precondition (a permanent `notification_setting` fixture) `paddle_notification`'s acceptance tests need to exercise their real filter/lookup logic instead of only their empty-account skip path — same posture as the existing default-payment-link and pinned-subscription preconditions.
+
 ## [0.4.0] - 2026-08-11
 
 Stable graduation of the actions layer introduced in `0.4.0-beta.1` — every action now has a real-sandbox-verified round trip, closing out that release's "Note". Getting there surfaced three real bugs the sandbox alone could catch, all fixed below.
