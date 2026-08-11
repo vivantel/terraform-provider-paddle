@@ -25,6 +25,7 @@ on:
 jobs:
   sweep:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -42,7 +43,21 @@ jobs:
         # whole reported failure). Scoped to the exact package that has
         # sweepers, not a wildcard that happens to have only ever matched
         # one package until now.
-      - run: go test ./internal/provider -sweep=sandbox -v
+      # -timeout=30m — found the hard way, 2026-08-11: `go test`'s own
+      # default 10-minute test timeout killed a real sweep run
+      # ("*** Test killed with quit: ran too long (11m0s)") mid-way
+      # through a large backlog (dozens of leaked customers accumulated
+      # from a day of CI runs before createAdjustmentFixtureTransaction's
+      # own per-test cleanup existed — see
+      # action_paddle_adjustment_acc_test.go). Each leaked customer costs
+      # several sequential API calls to clean up (list transactions,
+      # cancel/credit each, archive the customer), so a large one-time
+      # backlog can genuinely exceed 10 minutes even though a routine
+      # weekly run (mostly nothing to sweep, now that per-test cleanup
+      # exists) won't come close. timeout-minutes: 45 above gives this
+      # room too — GitHub's own job-level default (360m) was never the
+      # binding constraint, `go test`'s internal one was.
+      - run: go test ./internal/provider -sweep=sandbox -v -timeout=30m
         env:
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
           # paddle_test_subscription_charge sweeper (real invoices left
