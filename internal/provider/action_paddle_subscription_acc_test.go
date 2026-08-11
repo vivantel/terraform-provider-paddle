@@ -476,3 +476,30 @@ resource "terraform_data" "trigger" {
 		},
 	})
 }
+
+// TestAccDebugDumpNextTransactionPreview is TEMPORARY, purely diagnostic
+// (2026-08-11): a pure read against the pinned subscription's
+// next_transaction preview, zero risk of creating anything, to see the
+// actual raw state after TestAccPaddleSubscriptionCharge_nextBillingPeriod_roundTrip
+// failed twice in a row with 0 matches -- need to know whether that's
+// because nothing is actually queued (the charge silently didn't queue
+// anything) or because something *is* queued but this test's own
+// matching logic can't see it. Delete once the real cause is found.
+func TestAccDebugDumpNextTransactionPreview(t *testing.T) {
+	testAccPreCheck(t)
+	c := newTestAccClient()
+	subID := os.Getenv("PADDLE_TEST_SUBSCRIPTION_ID")
+	if subID == "" {
+		t.Skip("PADDLE_TEST_SUBSCRIPTION_ID not set")
+	}
+	preview, err := c.GetSubscriptionNextTransaction(context.Background(), subID)
+	if err != nil {
+		t.Fatalf("GetSubscriptionNextTransaction: %v", err)
+	}
+	t.Logf("preview = %+v", preview)
+	if preview != nil {
+		for i, item := range preview.Items {
+			t.Logf("item[%d] = %+v", i, item)
+		}
+	}
+}
