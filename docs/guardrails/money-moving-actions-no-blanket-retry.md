@@ -75,15 +75,25 @@ protections, not just one:
      subscription actually renews, so the search silently found nothing
      both before and after invoking, `paddle_subscription_charge`'s own
      duplicate-prevention **did not fire at all** for that input value.
-     Fixed by branching on `effective_from`: `"next_billing_period"`
+     Fixed in code by branching on `effective_from`: `"next_billing_period"`
      checks `GetSubscriptionNextTransaction` (Paddle's own
      `?include=next_transaction` renewal preview) instead of searching
-     transactions. This shipped broken in `v0.4.0-beta.1` for one full
-     release before being caught — the "invoke twice, confirm once"
-     acceptance-test standard this guardrail requires (see
-     `docs/plans/paddle-provider-v3.md` Step 1 item 5) is exactly what
-     caught it, once actually run against the real sandbox rather than
-     only unit-tested.
+     transactions — matches the documented API shape. **Not yet confirmed
+     against a real response**: running this branch for real found the
+     preview not reliably reflecting a just-queued charge quickly enough
+     for a test to observe (unclear from this session whether that's
+     Paddle-side eventual consistency or a real bug in the matching
+     logic) — this repo's own acceptance test was switched to
+     `"immediately"` instead so it has *reliable* invoke-twice coverage,
+     rather than asserting on a path not yet confirmed to work. The
+     `"next_billing_period"` branch remains a real, documented gap:
+     implemented per spec, not proven against Paddle's actual behavior.
+     This shipped broken (not just unverified — silently non-functional)
+     in `v0.4.0-beta.1` for one full release before being caught — the
+     "invoke twice, confirm once" acceptance-test standard this guardrail
+     requires (see `docs/plans/paddle-provider-v3.md` Step 1 item 5) is
+     exactly what caught it, once actually run against the real sandbox
+     rather than only unit-tested.
      See `docs/plans/paddle-provider-v3.md` Step 2 for the full account
      of this correction.
 

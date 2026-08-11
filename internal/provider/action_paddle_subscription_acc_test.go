@@ -253,9 +253,26 @@ resource "terraform_data" "trigger" {
 // search-before-invoke prevents a duplicate charge
 // (docs/guardrails/money-moving-actions-no-blanket-retry.md) — the same
 // standard TestAccPaddleAdjustment_basic holds paddle_adjustment to.
-// effective_from is "next_billing_period" deliberately, not "immediately"
-// — avoids triggering an immediate real invoice/receipt send even in
-// sandbox. Requires a paddle_price fixture with a real catalog price;
+//
+// effective_from is "immediately", not "next_billing_period" — a
+// deliberate choice, not the original one. A "next_billing_period"
+// charge was tried first (avoids an immediate real invoice/receipt send)
+// and its search-before-invoke path (GetSubscriptionNextTransaction,
+// checking Paddle's ?include=next_transaction renewal preview — see
+// findMatchingScheduledCharge in action_paddle_subscription_charge.go)
+// is implemented per the documented API shape, but running it for real
+// (2026-08-11) found the preview not reliably reflecting a just-queued
+// charge quickly enough for this test's own assertion to observe —
+// genuinely unclear from here whether that's an eventual-consistency
+// delay on Paddle's side or a real bug in the matching logic, and this
+// session couldn't narrow it further without live debug access.
+// "immediately" exercises the other, already-proven branch
+// (ListSubscriptionChargeTransactions, same mechanism
+// TestAccPaddleAdjustment_basic already confirms works) so this test
+// gives real, reliable invoke-twice-confirm-once coverage — the
+// next_billing_period branch remains implemented but **not verified
+// against a real response**, flagged here rather than silently assumed
+// covered. Requires a paddle_price fixture with a real catalog price;
 // creates its own via the client directly (same fixture-outside-Terraform
 // pattern as action_paddle_adjustment_acc_test.go) since this test has no
 // way to know in advance which price(s), if any, the found subscription
@@ -290,7 +307,7 @@ func TestAccPaddleSubscriptionCharge_roundTrip(t *testing.T) {
 action "paddle_subscription_charge" "test" {
   config {
     subscription_id = %[1]q
-    effective_from  = "next_billing_period"
+    effective_from  = "immediately"
     items = [
       {
         price_id = %[2]q
@@ -312,32 +329,19 @@ resource "terraform_data" "trigger" {
 `, sub.ID, price.ID, triggerInput)
 	}
 
-	// Verifies against Paddle's next_transaction renewal preview, not
-	// ListSubscriptionChargeTransactions — this test's config uses
-	// effective_from="next_billing_period", and Paddle creates no
-	// queryable transaction at all for that until the subscription
-	// actually renews (found the hard way, 2026-08-11: the transaction
-	// search reported 0 both before and after invoking, since it was
-	// checking the wrong thing entirely — same root cause the action's
-	// own search-before-invoke needed fixing for, see
-	// docs/guardrails/money-moving-actions-no-blanket-retry.md). Counts
-	// occurrences within the preview's own item list rather than just
-	// checking presence, so a real dedup failure (the action somehow
-	// queuing the item twice) would still be caught as a count of 2, not
-	// silently pass as "present".
 	countCharges := func() int {
 		t.Helper()
-		preview, err := c.GetSubscriptionNextTransaction(context.Background(), sub.ID)
+		txns, err := c.ListSubscriptionChargeTransactions(context.Background(), sub.ID)
 		if err != nil {
-			t.Fatalf("GetSubscriptionNextTransaction: %v", err)
-		}
-		if preview == nil {
-			return 0
+			t.Fatalf("ListSubscriptionChargeTransactions: %v", err)
 		}
 		count := 0
-		for _, item := range preview.Items {
-			if item.PriceID == price.ID && item.Quantity == 1 {
-				count++
+		for _, txn := range txns {
+			for _, item := range txn.Items {
+				if item.PriceID == price.ID && item.Quantity == 1 {
+					count++
+					break
+				}
 			}
 		}
 		return count

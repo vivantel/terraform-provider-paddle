@@ -53,9 +53,10 @@ func (a *SubscriptionChargeAction) Schema(_ context.Context, _ action.SchemaRequ
 			"**not a guarantee**: two deliberate, genuinely separate charges for the identical items would look identical to " +
 			"this check too (docs/guardrails/money-moving-actions-no-blanket-retry.md). The check itself differs by " +
 			"`effective_from`, since Paddle only creates a queryable transaction record for an `immediately` charge — a " +
-			"`next_billing_period` charge is checked against the subscription's next-renewal preview instead (found " +
-			"necessary against the real sandbox, 2026-08-10: searching transactions for a `next_billing_period` charge " +
-			"always finds nothing, since none exists yet until the subscription actually renews).",
+			"`next_billing_period` charge is checked against the subscription's next-renewal preview instead. **The " +
+			"`next_billing_period` path is implemented per Paddle's documented API shape but not yet confirmed against a " +
+			"real response** (2026-08-11: the preview didn't reliably reflect a just-queued charge quickly enough for a " +
+			"real-sandbox test to verify) — prefer `immediately` if you depend on this action's duplicate-prevention.",
 		Attributes: map[string]actionschema.Attribute{
 			"subscription_id": actionschema.StringAttribute{
 				Required:            true,
@@ -171,7 +172,7 @@ func findMatchingScheduledCharge(preview *client.NextTransactionPreview, wantIte
 	}
 	got := make([]client.TransactionItem, 0, len(preview.Items))
 	for _, item := range preview.Items {
-		got = append(got, client.TransactionItem{PriceID: item.PriceID, Quantity: item.Quantity})
+		got = append(got, client.TransactionItem(item))
 	}
 	return sameChargeItems(wantItems, got)
 }

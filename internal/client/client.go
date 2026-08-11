@@ -1099,7 +1099,13 @@ func (c *Client) ListAdjustments(ctx context.Context, transactionID string) ([]A
 	var all []Adjustment
 	after := ""
 	for {
-		path := "/adjustments?per_page=200&transaction_id=" + url.QueryEscape(transactionID)
+		// per_page=200 (this client's usual default) exceeds
+		// list-adjustments' own documented max of 50 and returns 400
+		// bad_request — found against the real sandbox, 2026-08-11.
+		// list-adjustments is the one list endpoint in this client with a
+		// lower cap than the usual 200; don't copy 200 to a new list
+		// method without checking that endpoint's own max first.
+		path := "/adjustments?per_page=50&transaction_id=" + url.QueryEscape(transactionID)
 		if after != "" {
 			path += "&after=" + url.QueryEscape(after)
 		}
