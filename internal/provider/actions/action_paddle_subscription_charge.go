@@ -144,14 +144,13 @@ func toAPISubscriptionChargeItems(items []subscriptionChargeItemModel) []client.
 	return out
 }
 
-// sameChargeItems reports whether want and got contain exactly the same
-// (price_id, quantity) pairs, order-independent — the matching rule
-// findMatchingCharge uses. A pure function over already-converted slices
-// so it's unit-testable without an HTTP round trip or a tfsdk model.
-func sameChargeItems(want []client.SubscriptionChargeItem, got []client.TransactionItem) bool {
-	if len(want) != len(got) {
-		return false
-	}
+// claimEachWantedItem reports whether every item in want can be matched
+// one-to-one against a distinct item in got (order-independent,
+// duplicate-price-id-aware — see TestSameChargeItems_DuplicatePriceIDsMatchOneToOne).
+// Shared by sameChargeItems (which additionally requires got to have
+// nothing left over) and containsChargeItems (which allows got to contain
+// unrelated extra items too).
+func claimEachWantedItem(want []client.SubscriptionChargeItem, got []client.TransactionItem) bool {
 	remaining := make([]client.TransactionItem, len(got))
 	copy(remaining, got)
 	for _, w := range want {
@@ -172,6 +171,30 @@ func sameChargeItems(want []client.SubscriptionChargeItem, got []client.Transact
 		remaining = append(remaining[:found], remaining[found+1:]...)
 	}
 	return true
+}
+
+// sameChargeItems reports whether want and got contain exactly the same
+// (price_id, quantity) pairs, order-independent — the matching rule
+// findMatchingCharge uses: an origin=subscription_charge Transaction's
+// Items is exactly the charge's own items, nothing else mixed in, so an
+// exact-set match is correct there.
+func sameChargeItems(want []client.SubscriptionChargeItem, got []client.TransactionItem) bool {
+	if len(want) != len(got) {
+		return false
+	}
+	return claimEachWantedItem(want, got)
+}
+
+// containsChargeItems reports whether every item in want appears
+// somewhere in got, allowing got to contain other, unrelated items too —
+// the matching rule findMatchingScheduledCharge uses, since (unlike a
+// subscription_charge Transaction) the next-renewal preview mixes a
+// queued one-time charge's items together with the subscription's own
+// normal recurring items in the same list; requiring an exact match there
+// would never succeed even once the charge really is queued (confirmed
+// the hard way, 2026-08-11 — see findMatchingScheduledCharge's comment).
+func containsChargeItems(want []client.SubscriptionChargeItem, got []client.TransactionItem) bool {
+	return claimEachWantedItem(want, got)
 }
 
 // findMatchingCharge implements this action's search-before-invoke check
@@ -199,7 +222,14 @@ func findMatchingCharge(existing []client.Transaction, wantItems []client.Subscr
 // can't see it — searching it for a "next_billing_period" charge would
 // always report no match, defeating search-before-invoke silently.
 // Paddle's own next_transaction preview (GetSubscriptionNextTransaction)
-// is the only way to see what's already queued.
+// is the only way to see what's already queued. Uses containsChargeItems,
+// not sameChargeItems — the preview's item list is the subscription's own
+// normal recurring items PLUS any queued one-time charges together, not
+// the charge's items alone, so an exact-set match would never succeed
+// (confirmed the hard way, 2026-08-11: this — combined with
+// NextTransactionPreview's now-fixed JSON-path bug — meant this check
+// never worked at all, and a real duplicate charge got queued against a
+// live sandbox subscription's next renewal before either bug was found).
 func findMatchingScheduledCharge(preview *client.NextTransactionPreview, wantItems []client.SubscriptionChargeItem) bool {
 	if preview == nil {
 		return false
@@ -216,7 +246,7 @@ func findMatchingScheduledCharge(preview *client.NextTransactionPreview, wantIte
 		g.Quantity = item.Quantity
 		got = append(got, g)
 	}
-	return sameChargeItems(wantItems, got)
+	return containsChargeItems(wantItems, got)
 }
 
 func (a *SubscriptionChargeAction) Invoke(ctx context.Context, req action.InvokeRequest, resp *action.InvokeResponse) {

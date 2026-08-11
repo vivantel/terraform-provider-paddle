@@ -420,6 +420,26 @@ Implements: [[0010-v3-scope-lifecycle-actions]],
      for the full account — this shipped broken in `v0.4.0-beta.1` for
      one release before the real-sandbox acceptance test standard this
      plan itself requires (item 5 below) caught it.
+     **Correction 3 (2026-08-11, found running the follow-up acceptance
+     test added to close out correction 2)**: correction 2's fix was
+     itself non-functional, for two compounding reasons —
+     `NextTransactionPreview.Items` was decoded from a top-level
+     `"items"` key that doesn't exist on the real response (the real
+     items are under `details.line_items`), and even once that's fixed,
+     the matching logic required an exact item-set match against a
+     preview that always mixes the subscription's own recurring items in
+     with any queued charge, so it could never match. This let a real
+     duplicate charge through into the sandbox subscription's next
+     renewal, confirmed by a diagnostic raw-JSON read against the actual
+     account. Fixed: `NextTransactionPreview` gained a custom
+     `UnmarshalJSON` reading `details.line_items`, and
+     `findMatchingScheduledCharge` now uses a new subset-containment
+     matcher (`containsChargeItems`) instead of the exact-match one
+     `findMatchingCharge` correctly uses for `"immediately"`. Full
+     account, including why the resulting sandbox duplicate was left to
+     bill and be swept rather than force-removed (no API to cancel a
+     single queued charge exists), in
+     `docs/guardrails/money-moving-actions-no-blanket-retry.md`.
 4. Register all four in `provider.go`'s `Actions()`.
 5. Unit tests for each action's status-check short-circuit logic
    (`cancel`/`pause`/`resume`: fabricate a `GetSubscription` response

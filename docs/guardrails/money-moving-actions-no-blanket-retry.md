@@ -96,6 +96,43 @@ protections, not just one:
      rather than only unit-tested.
      See `docs/plans/paddle-provider-v3.md` Step 2 for the full account
      of this correction.
+     **Third correction, found running a follow-up acceptance test
+     against the real sandbox, 2026-08-11**: the "not yet confirmed"
+     branch above was not an eventual-consistency timing issue, it was
+     two real, compounding bugs. First, `NextTransactionPreview`'s
+     `Items` field was decoded from a top-level `"items"` JSON key —
+     that key does not exist on the real response at all; the actual
+     queued items live under `details.line_items`, a third distinct item
+     shape from both `Transaction.Items` (nested `price.id`) and
+     `Transaction.Details.LineItems` (its own `txnitm_...` id). This
+     meant `Items` was silently always empty, so the duplicate check
+     could never find a match regardless of what was really queued.
+     Second, even with that fixed, the matching logic
+     (`sameChargeItems`) required an *exact* set match between the
+     wanted items and the preview's items — but the real preview mixes
+     the subscription's own normal recurring items together with any
+     queued one-time charges in one list, so an exact match could still
+     never succeed. Both bugs together meant this action's
+     search-before-invoke for `"next_billing_period"` **never worked at
+     all**, in any release — confirmed by finding a real duplicate
+     charge queued against a live sandbox subscription's next renewal
+     (verified via a diagnostic raw-JSON dump against the actual
+     account, not inferred). Fixed by giving `NextTransactionPreview` a
+     custom `UnmarshalJSON` that reads `details.line_items`, and by
+     giving `findMatchingScheduledCharge` its own subset-containment
+     matcher (`containsChargeItems`) instead of reusing the exact-match
+     one `findMatchingCharge` correctly uses for `"immediately"` (where
+     a `subscription_charge`-origin transaction's `Items` genuinely is
+     only the charged items, so exact match is right there). The
+     already-queued sandbox duplicate this produced was left in place
+     rather than force-removed — Paddle exposes no API to cancel a
+     single queued one-time charge individually (confirmed via Paddle's
+     own docs: they're only cleared automatically if the subscription
+     itself is canceled), and this is the sandbox account, so the
+     pragmatic choice was to let it bill normally next cycle and have
+     the existing sweeper credit it like any other test transaction,
+     rather than cancel and re-provision the pinned fixture subscription
+     other tests also depend on.
 
 ## Why
 
