@@ -526,3 +526,23 @@ func TestAccDebugDumpSubscription(t *testing.T) {
 	b, _ := json.MarshalIndent(raw, "", "  ")
 	t.Logf("raw subscription = %s", b)
 }
+
+// TestAccDebugListAllSubscriptionTransactions is TEMPORARY, purely
+// diagnostic (2026-08-11): checking whether the two duplicate queued
+// one-time-charge line items found in the next_transaction preview
+// correspond to any separately cancelable Transaction object (draft
+// status or otherwise), before deciding how to clean them up.
+func TestAccDebugListAllSubscriptionTransactions(t *testing.T) {
+	testAccPreCheck(t)
+	c := newTestAccClient()
+	subID := os.Getenv("PADDLE_TEST_SUBSCRIPTION_ID")
+	if subID == "" {
+		t.Skip("PADDLE_TEST_SUBSCRIPTION_ID not set")
+	}
+	var raw map[string]any
+	if err := c.DebugRawGET(context.Background(), "/transactions?subscription_id="+subID+"&per_page=50", &raw); err != nil {
+		t.Fatalf("raw GET: %v", err)
+	}
+	b, _ := json.MarshalIndent(raw, "", "  ")
+	t.Logf("raw transactions = %s", b)
+}
