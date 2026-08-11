@@ -312,19 +312,32 @@ resource "terraform_data" "trigger" {
 `, sub.ID, price.ID, triggerInput)
 	}
 
+	// Verifies against Paddle's next_transaction renewal preview, not
+	// ListSubscriptionChargeTransactions — this test's config uses
+	// effective_from="next_billing_period", and Paddle creates no
+	// queryable transaction at all for that until the subscription
+	// actually renews (found the hard way, 2026-08-11: the transaction
+	// search reported 0 both before and after invoking, since it was
+	// checking the wrong thing entirely — same root cause the action's
+	// own search-before-invoke needed fixing for, see
+	// docs/guardrails/money-moving-actions-no-blanket-retry.md). Counts
+	// occurrences within the preview's own item list rather than just
+	// checking presence, so a real dedup failure (the action somehow
+	// queuing the item twice) would still be caught as a count of 2, not
+	// silently pass as "present".
 	countCharges := func() int {
 		t.Helper()
-		txns, err := c.ListSubscriptionChargeTransactions(context.Background(), sub.ID)
+		preview, err := c.GetSubscriptionNextTransaction(context.Background(), sub.ID)
 		if err != nil {
-			t.Fatalf("ListSubscriptionChargeTransactions: %v", err)
+			t.Fatalf("GetSubscriptionNextTransaction: %v", err)
+		}
+		if preview == nil {
+			return 0
 		}
 		count := 0
-		for _, txn := range txns {
-			for _, item := range txn.Items {
-				if item.PriceID == price.ID && item.Quantity == 1 {
-					count++
-					break
-				}
+		for _, item := range preview.Items {
+			if item.PriceID == price.ID && item.Quantity == 1 {
+				count++
 			}
 		}
 		return count

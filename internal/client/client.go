@@ -1414,8 +1414,18 @@ func (c *Client) ArchiveTestFixtureCustomer(ctx context.Context, id string) erro
 type Address struct {
 	ID          string `json:"id,omitempty"`
 	CountryCode string `json:"country_code"`
-	PostalCode  string `json:"postal_code,omitempty"`
-	Status      string `json:"status,omitempty"`
+	// FirstLine, City, Region, PostalCode are all optional per the
+	// schema, but a manual-collection transaction rejects the address
+	// with transaction_address_not_suitable_for_collection_mode unless
+	// all five (CountryCode included) are set — confirmed against the
+	// real API reference and the real sandbox, 2026-08-11 (found via
+	// action_paddle_adjustment_acc_test.go's fixture, one field at a
+	// time: first CountryCode+PostalCode alone weren't enough).
+	FirstLine  string `json:"first_line,omitempty"`
+	City       string `json:"city,omitempty"`
+	Region     string `json:"region,omitempty"`
+	PostalCode string `json:"postal_code,omitempty"`
+	Status     string `json:"status,omitempty"`
 }
 
 type addressEnvelope struct {

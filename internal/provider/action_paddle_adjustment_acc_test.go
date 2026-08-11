@@ -47,7 +47,16 @@ func createAdjustmentFixtureTransaction(t *testing.T, c *client.Client) string {
 	if err != nil {
 		t.Fatalf("fixture CreateCustomer: %v", err)
 	}
-	addr, err := c.CreateAddress(ctx, cust.ID, client.Address{CountryCode: "US", PostalCode: "94103"})
+	// All five fields set — CountryCode alone (or +PostalCode) isn't
+	// enough for a manual-collection transaction, found against the real
+	// sandbox 2026-08-11: transaction_address_not_suitable_for_collection_mode.
+	addr, err := c.CreateAddress(ctx, cust.ID, client.Address{
+		CountryCode: "US",
+		FirstLine:   "123 Test St",
+		City:        "San Francisco",
+		Region:      "CA",
+		PostalCode:  "94103",
+	})
 	if err != nil {
 		t.Fatalf("fixture CreateAddress: %v", err)
 	}
