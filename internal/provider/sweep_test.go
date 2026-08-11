@@ -115,11 +115,34 @@ func isAccTestCustomerEmail(email string) bool {
 // record but zeroes out what's owed. Treats a 404 from either path (the
 // transaction is already gone) as success, same tolerance every other
 // sweeper in this file already has for its own entity.
+// shouldAttemptCancel reports whether cancelOrCreditTransaction should
+// even try CancelTransaction before falling back to credit/refund — false
+// only for "completed", the one status a cancel attempt is *guaranteed*
+// to be rejected for (a paid transaction can only be refunded/credited,
+// never canceled outright). Found the hard way, 2026-08-11: sweeping a
+// real backlog of leaked subscription-charge transactions (always
+// "completed" — see the comment below), every single Cancel attempt
+// against one still went through the client's full retry-with-backoff
+// path before falling through to the working credit/refund path, roughly
+// doubling this sweeper's real-world runtime under Paddle's rate
+// limiting for no benefit — an outcome already known in advance from the
+// status alone. Every other status still attempts Cancel first,
+// unchanged: cancel-then-fall-back-to-credit remains the right shape for
+// draft/ready/billed/past_due, where whether Cancel will succeed isn't
+// knowable without asking Paddle.
+func shouldAttemptCancel(status string) bool {
+	return status != "completed"
+}
+
 func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txn client.Transaction) error {
-	if err := c.CancelTransaction(ctx, txn.ID); err == nil || client.IsNotFound(err) {
-		return nil
+	if shouldAttemptCancel(txn.Status) {
+		if err := c.CancelTransaction(ctx, txn.ID); err == nil || client.IsNotFound(err) {
+			return nil
+		}
 	}
-	// Cancel failed — most likely because the transaction is past the
+	// Falls through here either because Cancel was skipped (status ==
+	// "completed", see shouldAttemptCancel) or because it was attempted
+	// and failed — most likely because the transaction is past the
 	// cancelable draft/ready/billed states. Paddle's adjustment action
 	// must match the transaction's actual status: "refund" for a paid
 	// (completed) transaction, "credit" for an unpaid one (billed/
