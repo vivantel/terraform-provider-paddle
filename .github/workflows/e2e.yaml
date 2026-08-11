@@ -17,6 +17,33 @@ name: E2E (Published)
 # available in CI (see examples/full-stack/main.tf's own placeholder
 # chedom_... — illustrative only), so faking one here would be checking
 # nothing, not narrowing coverage on purpose.
+#
+# Also exercises paddle_subscription_pause/resume against the real
+# published binary, per
+# docs/guardrails/actions-need-scheduled-regression-coverage.md
+# (docs/plans/paddle-provider-v4.md Step 6): every one of v0.4.0-beta.1's
+# three real action bugs was only ever caught by a human manually running
+# `go test -run TestAcc` against the sandbox — nothing re-verified a
+# *working* action stayed working independent of a push. ci.yaml's
+# `acceptance` job already covers all five actions via `-run TestAcc` on
+# every push, but that runs the in-process build from source, never the
+# published Registry artifact — the same distinction that already applies
+# to this workflow's resource coverage above. Note this can't be "extend
+# a `go test -run` regex" the way action_paddle_*_acc_test.go's tests
+# work: those tests build the provider in-process
+# (testAccProtoV6ProviderFactories), so they're incapable of testing a
+# published binary at all, regardless of what's tagged. This workflow's
+# existing pattern — real Terraform HCL against the real published
+# artifact — is extended with an action block instead. pause+resume (not
+# cancel or charge) against PADDLE_TEST_SUBSCRIPTION_ID (README.md's
+# Actions section documents provisioning this pinned fixture) — safe and
+# fully reversible, same subscription the pause/resume acceptance test
+# already uses and always leaves back in `active`. Skips this part
+# cleanly if the secret isn't set (same skip-cleanly precedent
+# paddle_checkout_domain's coverage gap above already establishes),
+# rather than failing a workflow that has no way to provision its own
+# subscription (subscriptions can only be created via a real checkout,
+# confirmed 2026-08-10 — see README.md).
 
 on:
   schedule:
@@ -62,6 +89,13 @@ jobs:
           mkdir -p /tmp/e2e-published
           cat > /tmp/e2e-published/main.tf <<EOF
           terraform {
+            # >= 1.14.0 is required once the action block below is
+            # appended (paddle_subscription_pause/resume) — set
+            # unconditionally, same version this repo's own
+            # required_version constraint uses (README.md), rather than
+            # only when the action coverage step below actually runs.
+            required_version = ">= 1.14.0"
+
             required_providers {
               paddle = {
                 source  = "vivantel/paddle"
@@ -119,6 +153,63 @@ jobs:
 
           output "looked_up_tax_category" {
             value = data.paddle_product.lookup.tax_category
+          }
+          EOF
+
+      - name: Append action coverage (pause/resume, if a pinned subscription is configured)
+        if: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID != '' }}
+        env:
+          PADDLE_TEST_SUBSCRIPTION_ID: ${{ secrets.PADDLE_TEST_SUBSCRIPTION_ID }}
+        run: |
+          cat >> /tmp/e2e-published/main.tf <<EOF
+
+          action "paddle_subscription_pause" "e2e" {
+            config {
+              subscription_id = "${PADDLE_TEST_SUBSCRIPTION_ID}"
+              effective_from   = "immediately"
+            }
+          }
+
+          action "paddle_subscription_resume" "e2e" {
+            config {
+              subscription_id = "${PADDLE_TEST_SUBSCRIPTION_ID}"
+              effective_from   = "immediately"
+            }
+          }
+
+          # Two separate terraform_data resources, not one resource with
+          # both actions in a single action_trigger's actions list —
+          # found via code review: Terraform's own lifecycle.action_trigger
+          # reference calls actions only an "ordered list", without
+          # explicitly documenting that Terraform waits for one action to
+          # finish before starting the next within the same trigger.
+          # depends_on between two separate resources IS a documented,
+          # load-bearing guarantee (Terraform's standard dependency graph
+          # serializes apply order on it), so pause_trigger's own apply
+          # (including its after_create action) is guaranteed complete
+          # before resume_trigger's apply begins — this always leaves
+          # PADDLE_TEST_SUBSCRIPTION_ID back in active without relying on
+          # same-trigger action-list ordering semantics that aren't
+          # explicitly documented.
+          resource "terraform_data" "pause_trigger" {
+            input = "${{ github.run_id }}-${{ github.run_attempt }}"
+            lifecycle {
+              action_trigger {
+                events  = [after_create]
+                actions = [action.paddle_subscription_pause.e2e]
+              }
+            }
+          }
+
+          resource "terraform_data" "resume_trigger" {
+            input      = "${{ github.run_id }}-${{ github.run_attempt }}"
+            depends_on = [terraform_data.pause_trigger]
+            lifecycle {
+              action_trigger {
+                events  = [after_create]
+                actions = [action.paddle_subscription_resume.e2e]
+              }
+            }
           }
           EOF
 

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -1152,6 +1153,25 @@ func (c *Client) ListAdjustments(ctx context.Context, transactionID string) ([]A
 type Subscription struct {
 	ID     string `json:"id,omitempty"`
 	Status string `json:"status,omitempty"`
+	// CustomerID/CurrencyCode/NextBilledAt/CreatedAt/UpdatedAt added for
+	// paddle_subscription_data_source.go (docs/plans/paddle-provider-v4.md
+	// Step 2) — the minimum field set that data source's schema needs.
+	// Real subscriptions carry many more fields (billing_details,
+	// current_billing_period, scheduled_change, items, ...); not modeled
+	// here, same "don't model ahead of use" discipline this struct
+	// already followed for the cancel/pause/resume/charge actions.
+	CustomerID   string `json:"customer_id,omitempty"`
+	CurrencyCode string `json:"currency_code,omitempty"`
+	// NextBilledAt is a pointer, not a plain string — genuinely absent
+	// (not just empty) for a canceled/paused subscription with nothing
+	// scheduled; must round-trip to a null next_billed_at in state, not
+	// an empty string a caller's `!= null` check would miss. Same
+	// pointer-for-genuinely-optional-field convention this codebase
+	// already uses elsewhere (discount_resource.go's Code/CurrencyCode/
+	// ExpiresAt/DiscountGroupID). Found via code review.
+	NextBilledAt *string `json:"next_billed_at,omitempty"`
+	CreatedAt    string  `json:"created_at,omitempty"`
+	UpdatedAt    string  `json:"updated_at,omitempty"`
 }
 
 type subscriptionEnvelope struct {
@@ -1327,6 +1347,7 @@ type TransactionDetails struct {
 type Transaction struct {
 	ID             string              `json:"id,omitempty"`
 	SubscriptionID string              `json:"subscription_id,omitempty"`
+	CustomerID     string              `json:"customer_id,omitempty"`
 	Status         string              `json:"status,omitempty"`
 	Origin         string              `json:"origin,omitempty"`
 	Items          []TransactionItem   `json:"items,omitempty"`
@@ -1338,17 +1359,56 @@ type transactionListEnvelope struct {
 	Meta paginationMeta `json:"meta"`
 }
 
-// ListSubscriptionChargeTransactions lists transactions for subscriptionID
-// with origin=subscription_charge — the set paddle_subscription_charge's
-// search-before-invoke matches against. subscription_id and origin are
-// Paddle's documented comma-separated-list filter syntax; a single value
-// needs no comma. Uses the regular retry-wrapped do(), not doNoRetry — a
-// read is safe to retry.
-func (c *Client) ListSubscriptionChargeTransactions(ctx context.Context, subscriptionID string) ([]Transaction, error) {
+// TransactionListFilter holds ListTransactionsFiltered's optional
+// server-side filters — customer_id, subscription_id, status, origin, all
+// confirmed real support in
+// docs/facts/0006-subscription-transaction-events-notifications-api-shapes.md.
+// Collapses what were three separate, near-duplicate list methods
+// (ListSubscriptionChargeTransactions, ListTransactionsByCustomer, and
+// paddle_transaction_data_source.go's own lookup, added
+// docs/plans/paddle-provider-v4.md Step 3) into one parameterized method
+// — ListSubscriptionChargeTransactions and ListTransactionsByCustomer
+// below are now thin wrappers over this, kept as named methods since
+// existing callers already use those names and signatures.
+type TransactionListFilter struct {
+	CustomerID     string
+	SubscriptionID string
+	Status         string
+	Origin         string
+	// Limit caps how many results ListTransactionsFiltered returns,
+	// stopping pagination early once reached — 0 means unlimited (the
+	// original behavior, still what ListSubscriptionChargeTransactions/
+	// ListTransactionsByCustomer below rely on). Set by
+	// paddle_transaction_data_source.go's filter-lookup path, which only
+	// needs to know 0 / exactly 1 / more than 1 match, not the full set.
+	Limit int
+}
+
+// ListTransactionsFiltered lists transactions matching filter — every
+// field left as "" is simply omitted from the query, matching every
+// transaction on that axis. Uses the regular retry-wrapped do(), not
+// doNoRetry — a read is safe to retry.
+func (c *Client) ListTransactionsFiltered(ctx context.Context, filter TransactionListFilter) ([]Transaction, error) {
+	perPage := 200
+	if filter.Limit > 0 && filter.Limit < perPage {
+		perPage = filter.Limit
+	}
 	var all []Transaction
 	after := ""
 	for {
-		path := "/transactions?per_page=200&origin=subscription_charge&subscription_id=" + url.QueryEscape(subscriptionID)
+		path := fmt.Sprintf("/transactions?per_page=%d", perPage)
+		if filter.CustomerID != "" {
+			path += "&customer_id=" + url.QueryEscape(filter.CustomerID)
+		}
+		if filter.SubscriptionID != "" {
+			path += "&subscription_id=" + url.QueryEscape(filter.SubscriptionID)
+		}
+		if filter.Status != "" {
+			path += "&status=" + url.QueryEscape(filter.Status)
+		}
+		if filter.Origin != "" {
+			path += "&origin=" + url.QueryEscape(filter.Origin)
+		}
 		if after != "" {
 			path += "&after=" + url.QueryEscape(after)
 		}
@@ -1357,11 +1417,18 @@ func (c *Client) ListSubscriptionChargeTransactions(ctx context.Context, subscri
 			return nil, err
 		}
 		all = append(all, env.Data...)
-		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore || reachedLimit(len(all), filter.Limit) {
 			return all, nil
 		}
 		after = env.Data[len(env.Data)-1].ID
 	}
+}
+
+// ListSubscriptionChargeTransactions lists transactions for subscriptionID
+// with origin=subscription_charge — the set paddle_subscription_charge's
+// search-before-invoke matches against.
+func (c *Client) ListSubscriptionChargeTransactions(ctx context.Context, subscriptionID string) ([]Transaction, error) {
+	return c.ListTransactionsFiltered(ctx, TransactionListFilter{SubscriptionID: subscriptionID, Origin: "subscription_charge"})
 }
 
 // NextTransactionItem/GetSubscriptionNextTransaction: a one-time charge
@@ -1440,20 +1507,27 @@ func (c *Client) GetSubscriptionNextTransaction(ctx context.Context, id string) 
 	return env.Data.NextTransaction, nil
 }
 
-// ── Test fixture support only — Customers, Addresses, Transactions ────────
+// ── Customers, Addresses, Transactions ─────────────────────────────────────
 //
-// NOT managed resources and NOT exposed anywhere in
-// internal/provider/*_resource.go or *_data_source.go. Customers/Addresses
-// stay deferred per docs/decisions/0010-v3-scope-lifecycle-actions.md
-// (the PII-in-state-file concern that decision raises applies to a real
-// Terraform resource whose values persist in state across applies — it
-// does not apply here: these exist only to script a disposable
-// customer+address+transaction into the sandbox as a fixture for
-// paddle_adjustment's acceptance test, created and left to be swept like
-// any other acc-test object, never touching Terraform state at all. Don't
-// build a resource or data source on top of these without revisiting that
-// decision properly first — this section existing is not evidence the
-// reversal was reconsidered.
+// Customer/Address stayed deferred as *managed resources* per
+// docs/decisions/0010-v3-scope-lifecycle-actions.md (the PII-in-state-file
+// concern that decision raises applies to a real Terraform resource whose
+// values persist in state across every apply). CreateCustomer/CreateAddress
+// below remain test-fixture-only, scripting a disposable
+// customer+address+transaction into the sandbox for paddle_adjustment's
+// acceptance test, created and left to be swept like any other acc-test
+// object, never touching Terraform state.
+//
+// GetCustomer/ListCustomersByEmail below are different: a general-purpose,
+// read-only lookup, added for paddle_customer_data_source.go
+// (docs/plans/paddle-provider-v4.md Step 4,
+// docs/decisions/0011-v4-scope-data-sources-and-regression-guard.md item
+// 4), which reopens *this* part of 0010's deferral deliberately — a data
+// source read still writes to Terraform state on every refresh, so the
+// PII concern doesn't go away just because there's no Create/Update/Delete
+// (docs/guardrails/pii-bearing-data-sources-need-state-security-warning.md).
+// Still no `paddle_address` data source or resource — 0011 explicitly
+// scoped that out; email/name alone resolves the actual discovery gap.
 
 type Customer struct {
 	ID     string `json:"id,omitempty"`
@@ -1505,6 +1579,44 @@ func (c *Client) ListTestFixtureCustomers(ctx context.Context) ([]Customer, erro
 // either.
 func (c *Client) ArchiveTestFixtureCustomer(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodPatch, "/customers/"+id, statusPatch{Status: "archived"}, nil)
+}
+
+// GetCustomer is paddle_customer_data_source.go's id-lookup backend.
+func (c *Client) GetCustomer(ctx context.Context, id string) (*Customer, error) {
+	var env customerEnvelope
+	if err := c.do(ctx, http.MethodGet, "/customers/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// ListCustomersByEmail is paddle_customer_data_source.go's email-filter
+// lookup backend. Confirmed against the real API reference, 2026-08-11:
+// GET /customers' email filter is an exact-match, comma-separated list of
+// addresses (not a partial/fuzzy match — that's a separate "search"
+// parameter this client doesn't use here), verified specifically rather
+// than assumed from the pattern this client's other filters use, per
+// docs/plans/paddle-provider-v4.md Step 4's explicit instruction — a
+// customer email lookup's match semantics matter for correctness in a way
+// a status/type filter's don't.
+func (c *Client) ListCustomersByEmail(ctx context.Context, email string) ([]Customer, error) {
+	var all []Customer
+	after := ""
+	for {
+		path := "/customers?per_page=200&email=" + url.QueryEscape(email)
+		if after != "" {
+			path += "&after=" + url.QueryEscape(after)
+		}
+		var env customerListEnvelope
+		if err := c.do(ctx, http.MethodGet, path, nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
 }
 
 type Address struct {
@@ -1610,23 +1722,7 @@ func (c *Client) GetTransaction(ctx context.Context, id string) (*Transaction, e
 // and sweepTestSubscriptionCharges' fallback-to-credit behavior in
 // internal/provider/sweep_test.go).
 func (c *Client) ListTransactionsByCustomer(ctx context.Context, customerID string) ([]Transaction, error) {
-	var all []Transaction
-	after := ""
-	for {
-		path := "/transactions?per_page=200&customer_id=" + url.QueryEscape(customerID)
-		if after != "" {
-			path += "&after=" + url.QueryEscape(after)
-		}
-		var env transactionListEnvelope
-		if err := c.do(ctx, http.MethodGet, path, nil, &env); err != nil {
-			return nil, err
-		}
-		all = append(all, env.Data...)
-		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
-			return all, nil
-		}
-		after = env.Data[len(env.Data)-1].ID
-	}
+	return c.ListTransactionsFiltered(ctx, TransactionListFilter{CustomerID: customerID})
 }
 
 type transactionCancelPatch struct {
@@ -1664,4 +1760,231 @@ func (c *Client) ListSubscriptions(ctx context.Context) ([]Subscription, error) 
 type subscriptionListEnvelope struct {
 	Data []Subscription `json:"data"`
 	Meta paginationMeta `json:"meta"`
+}
+
+// ── Events — https://developer.paddle.com/api-reference/events/overview ───
+//
+// paddle_events_data_source.go (docs/plans/paddle-provider-v4.md Step 5).
+// Read-only, general account-activity lookup — no managed resource, events
+// aren't something Terraform creates or reconciles.
+//
+// Confirmed against the real API reference, 2026-08-11
+// (docs/facts/0006-subscription-transaction-events-notifications-api-shapes.md):
+// GET /events supports only an event_type filter (comma-separated) — no
+// date-range query parameter exists at all, despite events being retained
+// for only 90 days. That retention window has to be documented in the
+// data source's schema description as a real limitation, not discovered
+// by a silently-empty result past 90 days.
+
+type Event struct {
+	ID         string          `json:"event_id"`
+	Type       string          `json:"event_type"`
+	OccurredAt string          `json:"occurred_at"`
+	Data       json.RawMessage `json:"data,omitempty"`
+}
+
+type eventListEnvelope struct {
+	Data []Event        `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+// ListEvents lists events, optionally filtered by eventTypes
+// (comma-separated per Paddle's documented filter syntax). Pass nil/empty
+// for no filter (every event type, subject to the 90-day retention
+// window).
+func (c *Client) ListEvents(ctx context.Context, eventTypes []string) ([]Event, error) {
+	var all []Event
+	after := ""
+	for {
+		path := "/events?per_page=200"
+		if len(eventTypes) > 0 {
+			path += "&event_type=" + url.QueryEscape(strings.Join(eventTypes, ","))
+		}
+		if after != "" {
+			path += "&after=" + url.QueryEscape(after)
+		}
+		var env eventListEnvelope
+		if err := c.do(ctx, http.MethodGet, path, nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
+// ── Notifications — https://developer.paddle.com/api-reference/notifications ─
+//
+// paddle_notification_data_source.go (docs/plans/paddle-provider-v4.md Step
+// 5) — the natural read-side companion to the paddle_notification_setting
+// resource this provider already manages: that resource configures
+// *where* to deliver, this answers *did it arrive*. Read-only, no managed
+// resource of its own (a notification is Paddle's own delivery-attempt
+// record, not something Terraform creates).
+//
+// Confirmed against the real API reference, 2026-08-11: GET /notifications'
+// filter support does NOT mirror GET /events' (a single event_type filter)
+// — it has notification_setting_id, status, search, filter, from/to
+// instead, checked specifically per docs/plans/paddle-provider-v4.md Step
+// 5's explicit instruction not to assume adjacency implies the same shape.
+
+type Notification struct {
+	ID                    string `json:"id,omitempty"`
+	Type                  string `json:"type,omitempty"`
+	Status                string `json:"status,omitempty"`
+	NotificationSettingID string `json:"notification_setting_id,omitempty"`
+	OccurredAt            string `json:"occurred_at,omitempty"`
+	// DeliveredAt is a pointer, not a plain string — same reasoning as
+	// Subscription.NextBilledAt's comment: genuinely absent (null) until
+	// actually delivered, must round-trip as null, not "". Found via
+	// code review.
+	DeliveredAt    *string `json:"delivered_at,omitempty"`
+	TimesAttempted int64   `json:"times_attempted,omitempty"`
+}
+
+type notificationEnvelope struct {
+	Data Notification `json:"data"`
+}
+
+type notificationListEnvelope struct {
+	Data []Notification `json:"data"`
+	Meta paginationMeta `json:"meta"`
+}
+
+// GetNotification is paddle_notification_data_source.go's id-lookup
+// backend.
+func (c *Client) GetNotification(ctx context.Context, id string) (*Notification, error) {
+	var env notificationEnvelope
+	if err := c.do(ctx, http.MethodGet, "/notifications/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// NotificationListFilter holds ListNotificationsFiltered's optional
+// server-side filters.
+type NotificationListFilter struct {
+	NotificationSettingID string
+	Status                string
+	// Limit — see TransactionListFilter.Limit's comment; same purpose,
+	// same default (0 = unlimited).
+	Limit int
+}
+
+// ListNotificationsFiltered is paddle_notification_data_source.go's
+// filter-lookup backend.
+func (c *Client) ListNotificationsFiltered(ctx context.Context, filter NotificationListFilter) ([]Notification, error) {
+	perPage := 200
+	if filter.Limit > 0 && filter.Limit < perPage {
+		perPage = filter.Limit
+	}
+	var all []Notification
+	after := ""
+	for {
+		path := fmt.Sprintf("/notifications?per_page=%d", perPage)
+		if filter.NotificationSettingID != "" {
+			path += "&notification_setting_id=" + url.QueryEscape(filter.NotificationSettingID)
+		}
+		if filter.Status != "" {
+			path += "&status=" + url.QueryEscape(filter.Status)
+		}
+		if after != "" {
+			path += "&after=" + url.QueryEscape(after)
+		}
+		var env notificationListEnvelope
+		if err := c.do(ctx, http.MethodGet, path, nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore || reachedLimit(len(all), filter.Limit) {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
+// NotificationLog is one delivery attempt's recorded outcome — the actual
+// "did my webhook get delivered" detail (response_code/response_body
+// Paddle recorded), not just the notification's own status/metadata.
+type NotificationLog struct {
+	ID                  string `json:"id,omitempty"`
+	ResponseCode        int64  `json:"response_code,omitempty"`
+	ResponseContentType string `json:"response_content_type,omitempty"`
+	ResponseBody        string `json:"response_body,omitempty"`
+	AttemptedAt         string `json:"attempted_at,omitempty"`
+}
+
+type notificationLogListEnvelope struct {
+	Data []NotificationLog `json:"data"`
+	Meta paginationMeta    `json:"meta"`
+}
+
+// ListNotificationLogs lists every delivery attempt recorded against
+// notificationID — GET /notifications/{id}/logs.
+func (c *Client) ListNotificationLogs(ctx context.Context, notificationID string) ([]NotificationLog, error) {
+	var all []NotificationLog
+	after := ""
+	for {
+		path := listPath("/notifications/"+notificationID+"/logs", after)
+		var env notificationLogListEnvelope
+		if err := c.do(ctx, http.MethodGet, path, nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
+// SubscriptionListFilter holds ListSubscriptionsFiltered's optional
+// server-side filters — confirmed real support for both,
+// docs/facts/0006-subscription-transaction-events-notifications-api-shapes.md.
+// Status accepts Paddle's documented comma-separated-list syntax for
+// multiple values, same as every other filter in this client.
+type SubscriptionListFilter struct {
+	CustomerID string
+	Status     string
+	// Limit — see TransactionListFilter.Limit's comment; same purpose,
+	// same default (0 = unlimited).
+	Limit int
+}
+
+// ListSubscriptionsFiltered is paddle_subscription_data_source.go's
+// lookup-by-filter backend (docs/plans/paddle-provider-v4.md Step 2) — a
+// second, filtered method alongside the existing unfiltered
+// ListSubscriptions rather than changing that one's behavior, since
+// ListSubscriptions' current callers (this provider's acceptance tests)
+// depend on its unfiltered listing.
+func (c *Client) ListSubscriptionsFiltered(ctx context.Context, filter SubscriptionListFilter) ([]Subscription, error) {
+	perPage := 200
+	if filter.Limit > 0 && filter.Limit < perPage {
+		perPage = filter.Limit
+	}
+	var all []Subscription
+	after := ""
+	for {
+		path := fmt.Sprintf("/subscriptions?per_page=%d", perPage)
+		if filter.CustomerID != "" {
+			path += "&customer_id=" + url.QueryEscape(filter.CustomerID)
+		}
+		if filter.Status != "" {
+			path += "&status=" + url.QueryEscape(filter.Status)
+		}
+		if after != "" {
+			path += "&after=" + url.QueryEscape(after)
+		}
+		var env subscriptionListEnvelope
+		if err := c.do(ctx, http.MethodGet, path, nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore || reachedLimit(len(all), filter.Limit) {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
 }

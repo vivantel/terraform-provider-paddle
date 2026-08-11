@@ -50,8 +50,8 @@ func TestProviderServer_ExposesAllFiveActionSchemas(t *testing.T) {
 	if len(resp.ResourceSchemas) != 5 {
 		t.Errorf("len(ResourceSchemas) = %d, want 5", len(resp.ResourceSchemas))
 	}
-	if len(resp.DataSourceSchemas) != 6 {
-		t.Errorf("len(DataSourceSchemas) = %d, want 6", len(resp.DataSourceSchemas))
+	if len(resp.DataSourceSchemas) != 11 {
+		t.Errorf("len(DataSourceSchemas) = %d, want 11", len(resp.DataSourceSchemas))
 	}
 }
 

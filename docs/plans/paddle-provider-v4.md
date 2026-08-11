@@ -127,7 +127,15 @@ change and confirm `git diff --exit-code -- docs/` locally before pushing.
 
 ## Step 1: centralized line-item-shape resolution helper
 
-Status: not started.
+Status: implemented, unit-tested, `go build`/`go vet`/`gofmt`/`go test ./...`
+clean. Sandbox acceptance verification pending — no `PADDLE_API_KEY`
+available in this session; user chose "implement + unit test only" over
+providing a key or waiting for CI (see conversation). `internal/client/lineitem.go`
+adds `LineItemIDs` and `ResolveLineItemID`; both real existing call sites
+(`internal/provider/sweep_test.go`'s `cancelOrCreditTransaction`,
+`internal/provider/action_paddle_adjustment_acc_test.go`'s
+`TestAccPaddleAdjustment_basic`) refactored to use them instead of their
+own `Details.LineItems` traversal.
 
 **Do this first** — Steps 3 and 5 both need to expose transaction line
 items in a data source schema, and building that against the current raw
@@ -175,8 +183,15 @@ becomes the second one.
 
 ## Step 2: `paddle_subscription` data source
 
-Status: not started. Depends on: none (doesn't need Step 1's helper —
-`Subscription` today only has `ID`/`Status`, no line items).
+Status: implemented, unit-tested, docs generated
+(`docs/data-sources/subscription.md`), `go build`/`go vet`/`gofmt`/
+`go test ./...` clean. Sandbox acceptance verification pending — same
+reason as Step 1. `internal/provider/subscription_data_source.go` +
+`ListSubscriptionsFiltered`/`SubscriptionListFilter` in
+`internal/client/client.go`, registered in `provider.go`. Acceptance
+tests written (`subscription_data_source_acc_test.go`, both `id` and
+`customer_id`+`status` filter paths) reusing `findTestSubscription` per
+the plan — not yet run against the real sandbox.
 
 New file: `internal/provider/subscription_data_source.go`, following
 `discount_data_source.go`'s structure. Schema:
@@ -221,7 +236,25 @@ it.
 
 ## Step 3: `paddle_transaction` data source
 
-Status: not started. Depends on: Step 1 (uses the line-item-shape helper
+Status: implemented, unit-tested, docs generated
+(`docs/data-sources/transaction.md`), `go build`/`go vet`/`gofmt`/
+`go test ./...` clean. Sandbox acceptance verification pending — same
+reason as Steps 1-2. Added `client.ResolvedLineItem`/`ResolveLineItems`
+to `internal/client/lineitem.go` (Step 1's helper, now with a second
+consumer) and collapsed `ListSubscriptionChargeTransactions`/
+`ListTransactionsByCustomer` onto one new
+`ListTransactionsFiltered`/`TransactionListFilter`, both kept as thin
+wrappers so existing callers/signatures are untouched.
+`internal/provider/transaction_data_source.go` registered in
+`provider.go`. Acceptance test
+(`transaction_data_source_acc_test.go`,
+`TestAccPaddleTransactionDataSource_feedsAdjustment`) feeds
+`data.paddle_transaction.test.line_items[0].item_id` straight into a
+real `paddle_adjustment` action invocation via Terraform references, per
+the plan's end-to-end proof requirement — not yet run against the real
+sandbox.
+
+Depends on: Step 1 (uses the line-item-shape helper
 to expose `Details.LineItems` in this data source's schema — this is the
 proof-of-value Step 1 was built for).
 
@@ -257,7 +290,20 @@ Docs: `tfplugindocs generate`, confirm `docs/data-sources/transaction.md`.
 
 ## Step 4: `paddle_customer` data source (PII-bearing)
 
-Status: not started. Depends on: none.
+Status: implemented, unit-tested, docs generated
+(`docs/data-sources/customer.md`), README PII section added, `go build`/
+`go vet`/`gofmt`/`go test ./...` clean. Sandbox acceptance verification
+pending — same reason as Steps 1-3. `internal/provider/customer_data_source.go`
+registered in `provider.go`; `GetCustomer`/`ListCustomersByEmail` added to
+`internal/client/client.go` (email filter confirmed exact-match,
+comma-separated, against the real API reference — not assumed). Acceptance
+test (`customer_data_source_acc_test.go`) creates a fixture customer,
+looks it up by both `id` and `email`, archives it in `t.Cleanup` — its
+`acctest`-containing email is already covered by the existing
+`sweepTestFixtureCustomers` sweeper too, no sweeper extension needed. Not
+yet run against the real sandbox.
+
+Depends on: none.
 
 New file: `internal/provider/customer_data_source.go`. Schema: `id`
 `Optional`, `email` `Optional` filter, `name`/`status` `Computed`.
@@ -298,7 +344,29 @@ Docs: `tfplugindocs generate`, confirm `docs/data-sources/customer.md`.
 
 ## Step 5: `paddle_events` and `paddle_notification` data sources
 
-Status: not started. Depends on: none (independent of Steps 1-4, can be
+Status: implemented, unit-tested, docs generated
+(`docs/data-sources/{events,notification}.md`), `go build`/`go vet`/
+`gofmt`/`go test ./...` clean. Sandbox acceptance verification pending —
+same reason as Steps 1-4. Confirmed against the real API reference,
+2026-08-11: `GET /events` has only an `event_type` filter, no date-range
+parameter at all (so `paddle_events`' schema documents the 90-day
+retention window as a hard limitation, not a discoverable one);
+`GET /notifications` has `notification_setting_id`/`status`/`search`/
+`filter`/`from`/`to` — does not mirror `/events`' shape, checked
+specifically rather than assumed. Delivery-attempt detail comes from
+`GET /notifications/{id}/logs` (`response_code`/`response_content_type`/
+`response_body`/`attempted_at`), surfaced as `paddle_notification`'s
+`logs` nested list. `ListEvents`, `GetNotification`/
+`ListNotificationsFiltered`/`NotificationListFilter`,
+`ListNotificationLogs` added to `internal/client/client.go`.
+`internal/provider/{events,notification}_data_source.go` registered in
+`provider.go`. `paddle_events`' acceptance test needs no dedicated
+fixture (any product create already produces a `product.created` event);
+`paddle_notification`'s is deliberately lenient — lists whatever already
+exists and skips cleanly if nothing does, since a notification can't be
+provisioned via direct API call. Not yet run against the real sandbox.
+
+Depends on: none (independent of Steps 1-4, can be
 done in parallel or any order relative to them).
 
 Two new files: `internal/provider/events_data_source.go` and
@@ -351,7 +419,30 @@ Docs: `tfplugindocs generate`, confirm
 
 ## Step 6: extend `e2e.yaml` for scheduled action regression coverage
 
-Status: not started. Depends on: none — can be done any time, doesn't
+Status: implemented (`.github/workflows/e2e.yaml`), YAML validated
+(`python3 -c "import yaml; yaml.safe_load(...)"`), not yet triggered —
+this needs a real GitHub Actions run (push/PR merge, then a manual
+`workflow_dispatch` or waiting for the daily schedule) which this session
+can't do; still needs the "Definition of done" confirmation below once
+merged. **Found the hard way while implementing this step**: the plan's
+description of `e2e.yaml` as running "the catalog resources' acceptance
+tests" doesn't match reality — `e2e.yaml` has no `go test` step at all,
+it applies real Terraform HCL against the published Registry artifact
+(`ci.yaml`'s separate `acceptance` job is what runs `go test -run TestAcc`,
+against the in-process build, not the published one). `action_paddle_*_acc_test.go`'s
+tests are structurally incapable of testing a published binary
+(`testAccProtoV6ProviderFactories` always builds in-process from source),
+so "extend the `-run` regex" wasn't actually applicable — extended
+`e2e.yaml`'s existing HCL-against-published-binary pattern with a
+`paddle_subscription_pause`/`resume` action block instead, gated behind a
+new `PADDLE_TEST_SUBSCRIPTION_ID` secret (same pinned fixture
+README.md's Actions section already documents provisioning), skipping
+cleanly if unset. `cancel`/`charge` deliberately excluded from this
+addition — pause+resume is the one action pair that's safe and fully
+reversible against a shared pinned fixture on a daily, unattended
+schedule.
+
+Depends on: none — can be done any time, doesn't
 block or get blocked by Steps 1-5, but do it before calling this plan
 done (it's the regression-guard the review specifically asked for).
 
@@ -374,38 +465,139 @@ project applies everywhere else (`docs/skills/verify-before-claiming.md`):
 
 ## Step 7: housekeeping (do this early — it's fast and unblocks nothing else)
 
-Status: not started.
+Status: partially done.
 
-- `README.md`: replace the stale "Pre-1.0 (`v0.2.x`)" Status line
-  (line ~9) with accurate current framing — mention `v0.4.0` stable,
-  actions, and (once Steps 2-5 ship) the new data sources. Update this at
-  the *end* of this plan's work, not the start, so it reflects what
-  actually shipped rather than what was planned.
+- `README.md`: replaced the stale "Pre-1.0 (`v0.2.x`)" Status line with
+  accurate current framing — `v0.4.0` stable, actions, and the new v4
+  data sources, done at the *end* of this session's work (Steps 1-6 all
+  implemented first) so it reflects what actually shipped rather than
+  what was planned. Also updated the repo's top-line description to name
+  the new data sources. Done.
 - Confirm the stray duplicate one-time charge this session left queued on
   `PADDLE_TEST_SUBSCRIPTION_ID`'s next renewal (documented in
   `docs/guardrails/money-moving-actions-no-blanket-retry.md`'s "Third
   correction" entry, billing date 2026-09-11) actually got credited by
-  the sweeper once that date passes — a quick sandbox check, not code
-  work. If it wasn't credited automatically, that's a real sweeper gap
-  worth its own bug report, not silently accepted.
+  the sweeper once that date passes. **Not checkable yet, not blocked on
+  sandbox access**: today is 2026-08-11, a full month before that
+  billing date — the charge hasn't even fired yet. Revisit this
+  specific item after 2026-09-11, separately from the rest of this
+  plan's sandbox-verification gap (which was blocked on
+  `PADDLE_API_KEY`, not on time passing).
+
+## Post-implementation code review (2026-08-11, `/code-review high`)
+
+10 findings against Steps 1-6 as originally implemented; all 10 fixed
+this same session, TDD (failing test confirmed red, then the fix,
+confirmed green) for every fix backed by real logic, not just docs:
+
+1. **`paddle_subscription`/`paddle_transaction`/`paddle_notification` had
+   no guard against a config with `id` and every filter left unset** —
+   silently fell through to an unfiltered list-and-hope-there's-exactly-
+   one, dangerous specifically for the two that feed real actions
+   (`subscription_id`/`item_id` into cancel/pause/resume/charge/adjustment).
+   Fixed: `internal/provider/lookup_guard.go`'s `subscriptionFilterEmpty`/
+   `transactionFilterEmpty`/`notificationFilterEmpty`, unit-tested
+   (`lookup_guard_test.go`, red before the functions existed, green
+   after), wired into each `Read()` as an explicit "Missing lookup key"
+   error, mirroring `paddle_customer`'s existing guard.
+2. **`events_data_source_acc_test.go`'s `Check` didn't actually verify
+   the data source's own output** — it only asserted `events.#` is set
+   (passes even at `"0"`), while the real assertion ran in `PostApplyFunc`
+   via an independent direct `client.ListEvents` call bypassing `Read()`
+   entirely; a real `Read()` bug could go undetected. Fixed:
+   `testAccCheckEventsContainsProduct` now asserts directly against the
+   data source's Terraform state.
+3. **`paddle_transaction`/`paddle_notification` had zero acceptance-test
+   coverage for their filter-lookup path** (only `id`-lookup was
+   exercised), unlike `paddle_subscription`'s `_byID`+`_byFilter` pair.
+   Fixed: added `TestAccPaddleTransactionDataSource_byFilter` and
+   `TestAccPaddleNotificationDataSource_byFilter`.
+4. **`e2e.yaml`'s new action block assumed same-`action_trigger`
+   ordering** ("`actions = [pause, resume]` runs pause first") that
+   Terraform's own reference doesn't explicitly guarantee (calls
+   `actions` only an "ordered list", confirmed via the live docs, no
+   sequential-completion language). Fixed: restructured into two
+   `terraform_data` resources with `depends_on` between them — a
+   documented, load-bearing Terraform guarantee — instead of relying on
+   same-trigger list-ordering semantics.
+5. **`e2e.yaml`'s action coverage doesn't literally satisfy
+   `docs/guardrails/actions-need-scheduled-regression-coverage.md`'s
+   "every action" wording** (deliberately excludes `cancel`/`charge`/
+   `adjustment` on safety/reversibility grounds, disclosed in the
+   workflow's own comment but not in the guardrail doc itself). Fixed:
+   the guardrail doc now documents this exception explicitly, plus the
+   e2e.yaml-has-no-`go test`-step correction (see Step 6's own status
+   line above for that same correction).
+6. **`Subscription.NextBilledAt`/`Notification.DeliveredAt` returned `""`
+   instead of `null`** when Paddle omits them (canceled/paused
+   subscription; not-yet-delivered notification) — inconsistent with
+   this codebase's own established pointer-for-genuinely-optional-field
+   convention (`discount_resource.go`'s `Code`/`CurrencyCode`/etc.), and
+   silently broke the idiomatic Terraform `!= null` absence check. Fixed:
+   both fields are now `*string`; unit tests
+   (`TestFromAPISubscription_NoNextBilledAtIsNull`,
+   `TestFromAPINotification_NoDeliveredAtIsNull`) confirmed red (didn't
+   compile against the old `string` fields) then green.
+7. **`ListSubscriptionsFiltered`/`ListTransactionsFiltered`/
+   `ListNotificationsFiltered` always paginated to full exhaustion**
+   even though their data-source callers only need to know 0/exactly-1/
+   more-than-1 — wasteful API calls on every `plan`/`refresh`, worse
+   once combined with the missing-guard bug above. Fixed: added a
+   `Limit` field to each `*ListFilter` (0 = unlimited, unchanged default
+   for every pre-existing caller), backed by a pure `reachedLimit`
+   helper (`internal/client/pagination.go`, unit-tested red-then-green),
+   and each data source now passes `Limit: 2`.
+
+All fixes verified: `go build ./...`, `go vet ./...`, `gofmt -l .`,
+`golangci-lint run ./...`, `go test ./...` all clean; `tfplugindocs
+generate` produces no diff beyond the intentional new doc files and the
+`next_billed_at`/`delivered_at` wording updates. Still blocked on real
+sandbox verification — see the checklist below, unchanged by this review
+round (no behavior needing a sandbox run was left un-reviewed, but
+nothing here has actually been run against one either).
 
 ## Definition of done for this plan
 
-- Steps 1-6 all have their own `Status: done` with real verification
-  evidence (test output, a CI run URL), not just "implemented".
-- `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
-  `golangci-lint run ./...` all clean.
-- `tfplugindocs generate` produces no diff (`git diff --exit-code --
-  docs/`).
-- Every new data source verified against the real sandbox via
-  `TF_ACC=1 PADDLE_API_KEY=... go test ./... -run TestAcc -v`, not just
-  unit-tested — per `docs/decisions/0003-acceptance-tests-against-live-sandbox.md`,
-  a resource/feature isn't done until confirmed against the real Paddle
-  sandbox.
-- `CHANGELOG.md` gets a `[0.5.0]` entry (via `/kms:changelog`, follow
-  `docs/skills/release-with-kms-changelog.md`).
-- Tagged and pushed as `v0.5.0` (not `v4.0.0` — see the version-numbering
-  note at the top of this file), release verified non-prerelease,
-  Registry ingestion confirmed, and a real `terraform init`/`validate`
-  smoke test run against the actual published artifact — same standard
-  `docs/plans/paddle-provider-v3.md`'s final steps set.
+**Current status (2026-08-11): Steps 1-7 implemented; NOT yet fully
+done.** This session had no `PADDLE_API_KEY` for the real sandbox — user
+chose "implement + unit test only" over providing a key or deferring to
+CI (see conversation) — so every real-sandbox verification item below is
+still open. Don't read any step's "implemented, unit-tested" status line
+above as "done" for this plan's own bar; re-run the acceptance suite
+against a real sandbox key before treating this as shippable.
+
+- [x] Steps 1-6 all implemented, each with its own `Status:` line above.
+      Not yet "done" in the plan's original sense (real verification
+      evidence, test output/CI run URL) — that's the sandbox-run item
+      below, still open.
+- [x] `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
+      `golangci-lint run ./...` all clean — confirmed this session.
+- [x] `tfplugindocs generate` produces no diff on already-generated docs
+      files; five new data source doc files added
+      (`docs/data-sources/{subscription,transaction,customer,events,notification}.md`) —
+      confirmed this session.
+- [ ] Every new data source verified against the real sandbox via
+      `TF_ACC=1 PADDLE_API_KEY=... go test ./... -run TestAcc -v`, not
+      just unit-tested — per
+      `docs/decisions/0003-acceptance-tests-against-live-sandbox.md`, a
+      resource/feature isn't done until confirmed against the real
+      Paddle sandbox. **Open** — acceptance test files exist for every
+      new data source (`{subscription,transaction,customer,events,notification}_data_source_acc_test.go`)
+      but have not been run.
+- [ ] `.github/workflows/e2e.yaml`'s new action-coverage step actually
+      triggered once (push/PR merge, then `workflow_dispatch` or the
+      daily schedule) and confirmed passing in that job's log — per
+      Step 6's own "Definition of done", "the YAML looks right" isn't
+      the same as "it actually ran". **Open.**
+- [ ] `CHANGELOG.md` gets a `[0.5.0]` entry (via `/kms:changelog`, follow
+      `docs/skills/release-with-kms-changelog.md`). **Open** —
+      deliberately not done in this session; a changelog entry
+      documents what shipped, and nothing here has shipped (sandbox-
+      verified) yet.
+- [ ] Tagged and pushed as `v0.5.0` (not `v4.0.0` — see the
+      version-numbering note at the top of this file), release verified
+      non-prerelease, Registry ingestion confirmed, and a real
+      `terraform init`/`validate` smoke test run against the actual
+      published artifact — same standard `docs/plans/paddle-provider-v3.md`'s
+      final steps set. **Open**, blocked on the sandbox verification
+      item above — don't tag a release before that's confirmed.

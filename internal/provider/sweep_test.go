@@ -138,19 +138,17 @@ func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txn client
 	// despite the API reference's prose implying items are only required
 	// for a partial adjustment. The item_id each entry needs is on
 	// Transaction.Details.LineItems, not the top-level Items field this
-	// txn value already has (see client.TransactionLineItem's comment) —
+	// txn value already has (see client.LineItemIDs' comment) —
 	// re-fetched per transaction via GetTransaction rather than assumed
 	// present on whatever list call found this txn in the first place.
 	full, err := c.GetTransaction(ctx, txn.ID)
 	if err != nil {
 		return fmt.Errorf("fetching full transaction detail for item IDs: %w", err)
 	}
-	var items []client.AdjustmentItem
-	if full.Details != nil {
-		items = make([]client.AdjustmentItem, 0, len(full.Details.LineItems))
-		for _, item := range full.Details.LineItems {
-			items = append(items, client.AdjustmentItem{ItemID: item.ID, Type: "full"})
-		}
+	ids := client.LineItemIDs(full)
+	items := make([]client.AdjustmentItem, 0, len(ids))
+	for _, id := range ids {
+		items = append(items, client.AdjustmentItem{ItemID: id, Type: "full"})
 	}
 	_, err = c.CreateAdjustment(ctx, client.Adjustment{
 		Action:        action,
