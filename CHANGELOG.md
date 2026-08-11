@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0] - 2026-08-11
+
+Stable graduation of the actions layer introduced in `0.4.0-beta.1` — every action now has a real-sandbox-verified round trip, closing out that release's "Note". Getting there surfaced three real bugs the sandbox alone could catch, all fixed below.
+
+### Fixed
+
+- `Transaction.Items[].price` is a nested object (`price.id`), not a flat `price_id` field, confirmed against the official Paddle SDKs — this had silently broken `paddle_subscription_charge`'s entire search-before-invoke item-matching the whole time (always comparing against an empty string). A separate field path, `Transaction.Details.LineItems[]`, carries the transaction-item `id` (`txnitm_...`) `paddle_adjustment`'s `item_id` actually references.
+- `paddle_subscription_charge`'s search-before-invoke for `effective_from = "next_billing_period"` never worked at all, in any release: `NextTransactionPreview.Items` was decoded from a top-level `"items"` key that doesn't exist on the real response (the real items are under `details.line_items`, a third distinct item shape again), and even with that fixed, an exact-set match against a preview that always mixes the subscription's own recurring items in with any queued charge could never succeed. Confirmed the hard way: a real duplicate charge got queued against a live sandbox subscription's next renewal before both bugs were found and fixed. The resulting sandbox duplicate was left in place rather than force-removed — Paddle has no API to cancel a single queued one-time charge — and will bill normally next cycle for the sweeper to credit like any other test transaction.
+- `paddle_adjustment`'s acceptance test built its Terraform config before `PreCheck` had set the fixture transaction ID (`resource.TestCase.Steps` is evaluated immediately, before `PreCheck` runs), sending an empty `transaction_id` on every apply.
+- `ListAdjustments` sent `per_page=200`, exceeding the endpoint's actual max of 50.
+- The sweeper now picks refund vs. credit by the target transaction's actual status (paid transactions need a refund, unpaid ones a credit) and treats an already-fully-adjusted transaction as success rather than a spurious warning on repeat sweep runs.
+- `sweep.yaml` was scoped to `./internal/provider/...`, which included the `actions` subpackage that has no sweeper support at all — narrowed to `./internal/provider`.
+- Paddle API error messages now include field-level detail (e.g. which field was invalid) instead of silently dropping it.
+
+### Added
+
+- `PADDLE_TEST_SUBSCRIPTION_ID` and `PADDLE_TEST_CANCELED_SUBSCRIPTION_ID` — two dedicated, pinned sandbox subscriptions (one kept `active`, one kept `canceled`) the subscription action tests target directly, replacing "whatever this account happens to have" and giving `pause`/`resume`/`charge`/the cancel short-circuit real, repeatable coverage instead of a permanent skip.
+- Retry-with-backoff on both search-before-invoke checks in `paddle_subscription_charge`, mitigating read-after-write lag between a charge and Paddle's own search/preview endpoints catching up with it.
+- A sweeper for the real invoices/transactions this test suite generates, so repeated CI runs don't accumulate sandbox billing noise.
+
 ## [0.4.0-beta.1] - 2026-08-10
 
 ### Added

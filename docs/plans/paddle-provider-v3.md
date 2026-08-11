@@ -1,16 +1,30 @@
 ---
 title: Implementation plan — terraform-provider-paddle v3
-status: shipped as v0.4.0-beta.1 — 2026-08-10. Merged via PR #14, CI
-  acceptance job passed against the real sandbox (one real finding fixed:
-  the adjustment fixture now skips cleanly on a missing default-payment-
-  link account precondition, docs/plans/paddle-provider-v3.md Step 5).
-  Tagged and published to the Terraform Registry; Registry Smoke Test
-  passed a real apply/destroy through the published binary, and a manual
-  real-Registry terraform init/validate/plan (no dev_overrides) confirmed
-  all five actions' schemas work through the actual published artifact.
-  Beta, not stable: subscription actions' real success paths
-  (pause/resume, charge) still need a human to provision a real sandbox
-  subscription via checkout before they can be exercised — see Step 5.
+status: shipped as v0.4.0 stable — 2026-08-11. Started as v0.4.0-beta.1
+  (2026-08-10, PR #14): CI acceptance job passed against the real sandbox
+  (one real finding fixed: the adjustment fixture now skips cleanly on a
+  missing default-payment-link account precondition, Step 5). Tagged and
+  published to the Terraform Registry; Registry Smoke Test passed a real
+  apply/destroy through the published binary, and a manual real-Registry
+  terraform init/validate/plan (no dev_overrides) confirmed all five
+  actions' schemas work through the actual published artifact. Held as
+  beta because the subscription actions' real success paths (pause/
+  resume, charge) still needed a human to provision a real sandbox
+  subscription via checkout before they could be exercised.
+  Promoted to stable once that verification, plus two more real bugs it
+  surfaced, were done: (1) `Transaction.Items[].price` turned out to be
+  nested (`price.id`), not flat, silently breaking
+  `paddle_subscription_charge`'s entire item-matching the whole time; (2)
+  the `next_billing_period` charge path's search-before-invoke never
+  worked at all, for two compounding reasons (wrong JSON path in
+  `NextTransactionPreview`, then an exact-match check that could never
+  succeed against a preview mixing recurring and queued items) — this one
+  produced a real duplicate charge queued in the sandbox before being
+  found and fixed. See `docs/guardrails/money-moving-actions-no-blanket-retry.md`
+  for both. A second dedicated subscription (`PADDLE_TEST_CANCELED_SUBSCRIPTION_ID`)
+  was also pinned so the cancel short-circuit test runs for real instead
+  of permanently skipping. All five actions now have real-sandbox-verified
+  round trips.
 date: 2026-08-10
 tags: [paddle, provider, plan, v3, actions]
 ---
