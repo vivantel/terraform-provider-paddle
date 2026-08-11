@@ -1534,6 +1534,14 @@ type Customer struct {
 	Email  string `json:"email"`
 	Name   string `json:"name,omitempty"`
 	Status string `json:"status,omitempty"`
+	// CreatedAt (RFC 3339, set by Paddle) — added so
+	// sweepTestFixtureCustomers can skip anything created too recently
+	// to safely sweep (see tooRecentToSweep's comment): the sweeper and
+	// the acceptance suite both run against the same live sandbox
+	// account with no coordination between them, so an age guard is the
+	// only thing standing between a concurrently-running sweep and a
+	// fixture an in-flight test hasn't finished using yet.
+	CreatedAt string `json:"created_at,omitempty"`
 }
 
 type customerEnvelope struct {

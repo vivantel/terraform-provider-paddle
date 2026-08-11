@@ -96,6 +96,35 @@ func createAdjustmentFixtureTransaction(t *testing.T, c *client.Client) *client.
 		}
 		t.Fatalf("fixture CreateTransaction: %v", err)
 	}
+
+	// Archived/canceled immediately at the end of this test, not left
+	// sweep-only — found via a real accumulation problem, 2026-08-11: two
+	// tests now call this helper on every CI push
+	// (TestAccPaddleAdjustment_basic and
+	// TestAccPaddleTransactionDataSource_feedsAdjustment), and neither
+	// had any cleanup of its own, so every push added two more customers
+	// with nothing removing them until sweep.yaml's weekly run.
+	// docs/decisions/0009-tflog-observability-and-acceptance-test-sweepers.md's
+	// own stated intent is that sweepers are a safety net for a run that
+	// dies *mid-test* (CI timeout, force-push, Ctrl-C) — not the primary
+	// cleanup path for every normal, successful run, which every other
+	// fixture in this repo already handles via CheckDestroy or its own
+	// t.Cleanup (see customer_data_source_acc_test.go's fixture for the
+	// closest precedent). Reuses cancelOrCreditTransaction
+	// (internal/provider/sweep_test.go) — the exact same status-aware
+	// cancel-or-credit logic the sweeper itself uses, so this and the
+	// sweeper can't drift into handling "already adjusted"/404 outcomes
+	// differently.
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		if err := cancelOrCreditTransaction(cleanupCtx, c, *txn); err != nil {
+			t.Logf("cleanup: cancelOrCreditTransaction(%s): %v", txn.ID, err)
+		}
+		if err := c.ArchiveTestFixtureCustomer(cleanupCtx, cust.ID); err != nil && !client.IsNotFound(err) {
+			t.Logf("cleanup: ArchiveTestFixtureCustomer(%s): %v", cust.ID, err)
+		}
+	})
+
 	return txn
 }
 
