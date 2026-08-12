@@ -623,13 +623,27 @@ exactly the one expected new file (`docs/actions/notification_replay.md`),
 no other diff. Real-sandbox verification confirmed via CI's `acceptance`
 job on PR #34 (https://github.com/vivantel/terraform-provider-paddle/pull/34)
 — `TestAccPaddleNotificationReplay_createsNewNotification` itself passed
-on both the first and re-run attempt; the job's first attempt failed on
-an unrelated, pre-existing sandbox rate-limit flake
-(`TestAccPaddleTransactionDataSource_byFilter`/`TestAccPaddleTransactionsDataSource_byFilter`
-hitting real `429`s, the same class of transient failure Step 4's PR hit
-— not a regression from this step's change), clean on re-run. Depends
-on: none, but natural to do after Step 4 (shares context with the
-notification data sources).
+every time it ran. Getting the whole job green took real investigation,
+not just retries: the same unrelated, pre-existing tests
+(`TestAccPaddleTransactionDataSource_byFilter`/
+`TestAccPaddleTransactionsDataSource_byFilter`) failed on real sandbox
+`429`s across 5 consecutive attempts (including a 15-minute cooldown),
+confirming sustained account-wide rate-limit exhaustion, not a one-off
+flake. Root-caused with the user's help (asked "do we respect
+Retry-After?"): `do()` was already correctly honoring the header
+(`waitBeforeRetry`/`parseRetryAfter`), but a correctly-read `Retry-After`
+still got clamped to `retryMaxRetryAfter` (30s), and the 60s
+`retryOverallBudget` only left room for one or two such waits before
+giving up — not enough to ride out sustained throttling even though the
+client was behaving correctly. Fixed with a new exported
+`client.RelaxRetryTuningForAcceptanceTests()` (production defaults
+unchanged), wired into `internal/provider`'s existing `TestMain` when
+`TF_ACC` is set — the very next CI run passed clean on the first
+attempt, confirming the diagnosis. This fix is broader than Step 5 (it
+benefits every step's acceptance-test verification, retroactively too)
+but is recorded here since this is where it was found and fixed.
+Depends on: none, but natural to do after Step 4 (shares context with
+the notification data sources).
 
 Read `docs/decisions/0012-v5-scope-pii-data-sources-timeouts-testing.md`
 item 4 and `docs/facts/0007-replay-endpoint-and-timeouts-module-confirmed.md`
