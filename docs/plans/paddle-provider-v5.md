@@ -763,10 +763,11 @@ surprise. A whole-transaction `refund` with no `items` (README's own
 basic Actions example) still works fine — this specific combination
 (item-level + `refund`) is what's actually disallowed.
 
-Real-sandbox verification of the example pending CI's `acceptance` job
-re-run on PR #35 (https://github.com/vivantel/terraform-provider-paddle/pull/35)
-after both fixes. Depends on: Steps 2, 4, 5 (documents features those
-steps build).
+Real-sandbox verification of the example confirmed via CI's
+`acceptance` job on PR #35 (https://github.com/vivantel/terraform-provider-paddle/pull/35)
+after both fixes — `build`/`docs`/`lint`/`acceptance` all pass,
+including `TestAccExampleLookupThenAct_appliesCleanly` itself. Depends
+on: Steps 2, 4, 5 (documents features those steps build).
 
 1. `examples/lookup-then-act/main.tf` — a real, complete example: look up
    a subscription via `paddle_subscription` (or the new plural
