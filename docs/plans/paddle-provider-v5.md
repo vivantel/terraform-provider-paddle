@@ -620,9 +620,16 @@ just that the action call didn't error.
 `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
 `golangci-lint run ./...` all clean. `tfplugindocs generate` produced
 exactly the one expected new file (`docs/actions/notification_replay.md`),
-no other diff. Real-sandbox verification pending CI's `acceptance` job on
-this step's PR. Depends on: none, but natural to do after Step 4
-(shares context with the notification data sources).
+no other diff. Real-sandbox verification confirmed via CI's `acceptance`
+job on PR #34 (https://github.com/vivantel/terraform-provider-paddle/pull/34)
+— `TestAccPaddleNotificationReplay_createsNewNotification` itself passed
+on both the first and re-run attempt; the job's first attempt failed on
+an unrelated, pre-existing sandbox rate-limit flake
+(`TestAccPaddleTransactionDataSource_byFilter`/`TestAccPaddleTransactionsDataSource_byFilter`
+hitting real `429`s, the same class of transient failure Step 4's PR hit
+— not a regression from this step's change), clean on re-run. Depends
+on: none, but natural to do after Step 4 (shares context with the
+notification data sources).
 
 Read `docs/decisions/0012-v5-scope-pii-data-sources-timeouts-testing.md`
 item 4 and `docs/facts/0007-replay-endpoint-and-timeouts-module-confirmed.md`
