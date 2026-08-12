@@ -143,6 +143,10 @@ func (p *PaddleProvider) DataSources(_ context.Context) []func() datasource.Data
 		NewCustomerDataSource,
 		NewEventsDataSource,
 		NewNotificationDataSource,
+		NewSubscriptionsDataSource,
+		NewTransactionsDataSource,
+		NewNotificationsDataSource,
+		NewCustomersDataSource,
 	}
 }
 

@@ -454,7 +454,70 @@ alone.
 
 ## Step 4: four plural/list data sources
 
-Status: not started. Depends on: none.
+Status: done — 2026-08-12. All four plural data sources added, calling
+the existing `ListSubscriptionsFiltered`/`ListTransactionsFiltered`/
+`ListNotificationsFiltered` with `Limit: 0` (unlimited) as instructed,
+plus a new `ListCustomersFiltered` client method (`email`+`status`
+filters, confirmed real server-side support against the actual API
+reference — both filters, not just `email`, per the "Ground truth"
+section's note that this was already confirmed beyond what item 4's own
+enumeration mentioned).
+
+1. `paddle_subscriptions` — `customer_id`/`status` filters, reuses
+   `fromAPISubscription` and the exact `SubscriptionDataSourceModel`
+   struct as its nested element type.
+2. `paddle_transactions` — `subscription_id`/`customer_id`/`status`
+   filters. Explicit decision, documented in code: excludes `line_items`
+   (a new `TransactionSummaryModel`, not `TransactionDataSourceModel`) —
+   the singular data source's `line_items` requires an N+1 per-ID
+   re-fetch (list responses don't carry `details.line_items` at all),
+   which would mean an N+1 call per *every* result here; use this to find
+   an `id`, then `paddle_transaction` (singular) for `line_items`.
+3. `paddle_notifications` — `notification_setting_id`/`status` filters.
+   Same explicit N+1 decision, documented in code: excludes `logs` (a new
+   `NotificationSummaryModel`) — exactly the judgment call the plan
+   flagged as needing an explicit decision rather than a blind copy of
+   the singular schema.
+4. `paddle_customers` — `email`/`status` filters. Carries the
+   PII-compounding warning the guardrail specifies ("this returns
+   multiple customers' PII," not a copy-pasted singular sentence) — see
+   `docs/guardrails/pii-bearing-data-sources-need-state-security-warning.md`,
+   updated to close out its `paddle_customers` forward-reference
+   placeholder now that this data source actually exists.
+5. All four registered in `provider.go`'s `DataSources()`.
+   `actions_wiring_test.go`'s `len(resp.DataSourceSchemas)` expected count
+   updated from 11 to 15, passing.
+6. None of the four plural data sources have a "no filter set" hard-error
+   guard the way the singular ones do (`lookup_guard.go`) — an empty
+   filter set is a legitimate "list everything" use case here, per the
+   plan's own explicit call on this; each schema's
+   `MarkdownDescription` carries a `⚠️` cost warning instead (API call
+   volume + state-file size for an unfiltered/loosely-filtered call), the
+   judgment call the plan asked to make explicitly rather than silently
+   copying the singular pattern.
+7. Unit tests for the two new list-conversion functions
+   (`fromAPITransactionSummary`, `fromAPINotificationSummary`,
+   `internal/provider/plural_data_sources_test.go`) —
+   `fromAPISubscription`/`fromAPICustomer` are reused verbatim from the
+   singular data sources and already unit-tested there, so no duplicate
+   test needed. Acceptance tests for all four
+   (`*_data_source_acc_test.go`), each reusing an existing fixture per the
+   plan's instruction (`findTestSubscription`,
+   `createAdjustmentFixtureTransaction`, the sandbox's existing
+   notifications, a fresh customer fixture matching the singular
+   `paddle_customer` test's own pattern) rather than provisioning new
+   ones — plus a shared `checkListContainsID`/`checkListAttrsSet` helper
+   pair (`plural_data_sources_acc_test.go`) since a plural data source's
+   filter can legitimately return more than the one fixture record a test
+   provisioned, unlike a singular data source's exact-index checks.
+
+`go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`
+(including the new unit tests; acceptance tests skip cleanly without
+`PADDLE_API_KEY`), `golangci-lint run ./...` all clean.
+`tfplugindocs generate` produced exactly the four expected new files
+(`docs/data-sources/{subscriptions,transactions,notifications,customers}.md`),
+no other diff. Real-sandbox verification of all four data sources
+pending CI's `acceptance` job on this step's PR. Depends on: none.
 
 Same structure as v4's singular data sources
 (`internal/provider/subscription_data_source.go` etc.) but returning a
