@@ -25,10 +25,21 @@ type DiscountGroupResource struct {
 	client *client.Client
 }
 
+// DiscountGroupResourceModel is deliberately timeouts-free — see
+// ProductResourceModel's comment in product_resource.go for why:
+// discount_group_data_source.go decodes state into this exact type too,
+// and its schema has no "timeouts" attribute.
 type DiscountGroupResourceModel struct {
-	ID       types.String   `tfsdk:"id"`
-	Name     types.String   `tfsdk:"name"`
-	Status   types.String   `tfsdk:"status"`
+	ID     types.String `tfsdk:"id"`
+	Name   types.String `tfsdk:"name"`
+	Status types.String `tfsdk:"status"`
+}
+
+// discountGroupResourceStateModel is what Create/Read/Update/Delete decode
+// Plan/State into — see productResourceStateModel's comment in
+// product_resource.go for why this wrapper exists.
+type discountGroupResourceStateModel struct {
+	DiscountGroupResourceModel
 	Timeouts timeouts.Value `tfsdk:"timeouts"`
 }
 
@@ -86,7 +97,7 @@ func fromAPIDiscountGroup(g client.DiscountGroup, m *DiscountGroupResourceModel)
 }
 
 func (r *DiscountGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan DiscountGroupResourceModel
+	var plan discountGroupResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -99,13 +110,13 @@ func (r *DiscountGroupResource) Create(ctx context.Context, req resource.CreateR
 	}
 	defer cancel()
 
-	created, err := r.client.CreateDiscountGroup(ctx, toAPIDiscountGroup(plan))
+	created, err := r.client.CreateDiscountGroup(ctx, toAPIDiscountGroup(plan.DiscountGroupResourceModel))
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Paddle discount group", client.FriendlyErrorMessage(err))
 		return
 	}
 
-	fromAPIDiscountGroup(*created, &plan)
+	fromAPIDiscountGroup(*created, &plan.DiscountGroupResourceModel)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -115,7 +126,7 @@ func (r *DiscountGroupResource) Read(ctx context.Context, req resource.ReadReque
 	// nested struct field today, so a full req.State.Get wouldn't actually
 	// crash right now, but this keeps the resource correct by construction
 	// rather than by accident if a future nested attribute is added.
-	var state DiscountGroupResourceModel
+	var state discountGroupResourceStateModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
@@ -139,18 +150,18 @@ func (r *DiscountGroupResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 
-	fromAPIDiscountGroup(*group, &state)
+	fromAPIDiscountGroup(*group, &state.DiscountGroupResourceModel)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *DiscountGroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan DiscountGroupResourceModel
+	var plan discountGroupResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var state DiscountGroupResourceModel
+	var state discountGroupResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -163,18 +174,18 @@ func (r *DiscountGroupResource) Update(ctx context.Context, req resource.UpdateR
 	}
 	defer cancel()
 
-	updated, err := r.client.UpdateDiscountGroup(ctx, state.ID.ValueString(), toAPIDiscountGroup(plan))
+	updated, err := r.client.UpdateDiscountGroup(ctx, state.ID.ValueString(), toAPIDiscountGroup(plan.DiscountGroupResourceModel))
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle discount group", client.FriendlyErrorMessage(err))
 		return
 	}
 
-	fromAPIDiscountGroup(*updated, &plan)
+	fromAPIDiscountGroup(*updated, &plan.DiscountGroupResourceModel)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
 func (r *DiscountGroupResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state DiscountGroupResourceModel
+	var state discountGroupResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return

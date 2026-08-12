@@ -32,26 +32,36 @@ type DiscountResource struct {
 }
 
 type DiscountResourceModel struct {
-	ID                        types.String   `tfsdk:"id"`
-	Description               types.String   `tfsdk:"description"`
-	Type                      types.String   `tfsdk:"type"`
-	Amount                    types.String   `tfsdk:"amount"`
-	Code                      types.String   `tfsdk:"code"`
-	EnabledForCheckout        types.Bool     `tfsdk:"enabled_for_checkout"`
-	Mode                      types.String   `tfsdk:"mode"`
-	CurrencyCode              types.String   `tfsdk:"currency_code"`
-	Recur                     types.Bool     `tfsdk:"recur"`
-	MaximumRecurringIntervals types.Int64    `tfsdk:"maximum_recurring_intervals"`
-	UsageLimit                types.Int64    `tfsdk:"usage_limit"`
-	RestrictTo                types.List     `tfsdk:"restrict_to"`
-	ExpiresAt                 types.String   `tfsdk:"expires_at"`
-	DiscountGroupID           types.String   `tfsdk:"discount_group_id"`
-	Status                    types.String   `tfsdk:"status"`
-	TimesUsed                 types.Int64    `tfsdk:"times_used"`
-	CreatedAt                 types.String   `tfsdk:"created_at"`
-	UpdatedAt                 types.String   `tfsdk:"updated_at"`
-	CustomData                types.String   `tfsdk:"custom_data"`
-	Timeouts                  timeouts.Value `tfsdk:"timeouts"`
+	ID                        types.String `tfsdk:"id"`
+	Description               types.String `tfsdk:"description"`
+	Type                      types.String `tfsdk:"type"`
+	Amount                    types.String `tfsdk:"amount"`
+	Code                      types.String `tfsdk:"code"`
+	EnabledForCheckout        types.Bool   `tfsdk:"enabled_for_checkout"`
+	Mode                      types.String `tfsdk:"mode"`
+	CurrencyCode              types.String `tfsdk:"currency_code"`
+	Recur                     types.Bool   `tfsdk:"recur"`
+	MaximumRecurringIntervals types.Int64  `tfsdk:"maximum_recurring_intervals"`
+	UsageLimit                types.Int64  `tfsdk:"usage_limit"`
+	RestrictTo                types.List   `tfsdk:"restrict_to"`
+	ExpiresAt                 types.String `tfsdk:"expires_at"`
+	DiscountGroupID           types.String `tfsdk:"discount_group_id"`
+	Status                    types.String `tfsdk:"status"`
+	TimesUsed                 types.Int64  `tfsdk:"times_used"`
+	CreatedAt                 types.String `tfsdk:"created_at"`
+	UpdatedAt                 types.String `tfsdk:"updated_at"`
+	CustomData                types.String `tfsdk:"custom_data"`
+}
+
+// discountResourceStateModel is what Create/Read/Update/Delete decode
+// Plan/State into — see productResourceStateModel's comment in
+// product_resource.go for why this wrapper exists instead of a Timeouts
+// field directly on DiscountResourceModel (discount_data_source.go decodes
+// state into that exact type too, and its schema has no "timeouts"
+// attribute).
+type discountResourceStateModel struct {
+	DiscountResourceModel
+	Timeouts timeouts.Value `tfsdk:"timeouts"`
 }
 
 func (r *DiscountResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -317,13 +327,13 @@ func fromAPIDiscount(ctx context.Context, d client.Discount, m *DiscountResource
 }
 
 func (r *DiscountResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan DiscountResourceModel
+	var plan discountResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	apiDiscount, diags := toAPIDiscount(ctx, plan)
+	apiDiscount, diags := toAPIDiscount(ctx, plan.DiscountResourceModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -343,7 +353,7 @@ func (r *DiscountResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPIDiscount(ctx, *created, &plan)...)
+	resp.Diagnostics.Append(fromAPIDiscount(ctx, *created, &plan.DiscountResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -357,7 +367,7 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 	// wouldn't actually crash right now, but using the same narrow-fetch
 	// pattern here keeps this resource correct by construction rather than
 	// by accident if a future nested attribute is added.
-	var state DiscountResourceModel
+	var state discountResourceStateModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
@@ -381,7 +391,7 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPIDiscount(ctx, *discount, &state)...)
+	resp.Diagnostics.Append(fromAPIDiscount(ctx, *discount, &state.DiscountResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -389,19 +399,19 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 }
 
 func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan DiscountResourceModel
+	var plan discountResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var state DiscountResourceModel
+	var state discountResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	apiDiscount, diags := toAPIDiscount(ctx, plan)
+	apiDiscount, diags := toAPIDiscount(ctx, plan.DiscountResourceModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -421,7 +431,7 @@ func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateReques
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPIDiscount(ctx, *updated, &plan)...)
+	resp.Diagnostics.Append(fromAPIDiscount(ctx, *updated, &plan.DiscountResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -429,7 +439,7 @@ func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateReques
 }
 
 func (r *DiscountResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state DiscountResourceModel
+	var state discountResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return

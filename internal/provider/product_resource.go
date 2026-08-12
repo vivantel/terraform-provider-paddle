@@ -27,16 +27,35 @@ type ProductResource struct {
 	client *client.Client
 }
 
+// ProductResourceModel is deliberately timeouts-free: product_data_source.go
+// decodes state into this exact type too, and its schema has no "timeouts"
+// attribute (only resources get one) — a Timeouts field here would make
+// every data source Read() fail with "Value Conversion Error: Struct
+// defines fields not found in object: timeouts", confirmed the hard way
+// via a real acceptance-test failure, 2026-08-12. See
+// productResourceStateModel below for where the resource-only timeouts
+// field actually lives.
 type ProductResourceModel struct {
-	ID          types.String   `tfsdk:"id"`
-	Name        types.String   `tfsdk:"name"`
-	TaxCategory types.String   `tfsdk:"tax_category"`
-	Description types.String   `tfsdk:"description"`
-	Type        types.String   `tfsdk:"type"`
-	ImageURL    types.String   `tfsdk:"image_url"`
-	Status      types.String   `tfsdk:"status"`
-	CustomData  types.String   `tfsdk:"custom_data"`
-	Timeouts    timeouts.Value `tfsdk:"timeouts"`
+	ID          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	TaxCategory types.String `tfsdk:"tax_category"`
+	Description types.String `tfsdk:"description"`
+	Type        types.String `tfsdk:"type"`
+	ImageURL    types.String `tfsdk:"image_url"`
+	Status      types.String `tfsdk:"status"`
+	CustomData  types.String `tfsdk:"custom_data"`
+}
+
+// productResourceStateModel is what Create/Read/Update/Delete actually
+// decode Plan/State into — ProductResourceModel plus the resource-only
+// "timeouts" attribute. The embedded field's tfsdk-tagged fields are
+// promoted by terraform-plugin-framework's reflection (confirmed via
+// internal/reflect/helpers.go's explicit anonymous-field support), so
+// toAPIProduct/fromAPIProduct keep operating on plain ProductResourceModel
+// values unchanged — call sites just pass state.ProductResourceModel.
+type productResourceStateModel struct {
+	ProductResourceModel
+	Timeouts timeouts.Value `tfsdk:"timeouts"`
 }
 
 func (r *ProductResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -154,13 +173,13 @@ func fromAPIProduct(p client.Product, m *ProductResourceModel) error {
 }
 
 func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan ProductResourceModel
+	var plan productResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	apiProduct, err := toAPIProduct(plan)
+	apiProduct, err := toAPIProduct(plan.ProductResourceModel)
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
 		return
@@ -179,7 +198,7 @@ func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	if err := fromAPIProduct(*created, &plan); err != nil {
+	if err := fromAPIProduct(*created, &plan.ProductResourceModel); err != nil {
 		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
 		return
 	}
@@ -187,15 +206,18 @@ func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest
 }
 
 func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	// Fetch just id, not the whole model. Every ProductResourceModel field
-	// is types.String today, which handles a null Computed-only attribute
-	// fine — so a full State.Get isn't actually broken here the way it
-	// was for price_resource.go's Read()/import (see that file's comment)
-	// — but fetching only what this method needs (id) before
-	// fromAPIProduct overwrites state wholesale below keeps this resource
-	// correct by construction, not by accident of which field types it
-	// happens to have today.
-	var state ProductResourceModel
+	// Fetch just id and timeouts, not the whole model. Every
+	// ProductResourceModel field is types.String today, which handles a
+	// null Computed-only attribute fine — so a full State.Get isn't
+	// actually broken here the way it was for price_resource.go's
+	// Read()/import (see that file's comment) — but fetching only what
+	// this method needs before fromAPIProduct overwrites state wholesale
+	// below keeps this resource correct by construction, not by accident
+	// of which field types it happens to have today. timeouts must be
+	// fetched explicitly (not part of fromAPIProduct's output) so the
+	// previously-configured value round-trips through this Read instead
+	// of being lost.
+	var state productResourceStateModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
@@ -219,7 +241,7 @@ func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 
-	if err := fromAPIProduct(*product, &state); err != nil {
+	if err := fromAPIProduct(*product, &state.ProductResourceModel); err != nil {
 		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
 		return
 	}
@@ -227,19 +249,19 @@ func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, re
 }
 
 func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan ProductResourceModel
+	var plan productResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var state ProductResourceModel
+	var state productResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	apiProduct, err := toAPIProduct(plan)
+	apiProduct, err := toAPIProduct(plan.ProductResourceModel)
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
 		return
@@ -258,7 +280,7 @@ func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
-	if err := fromAPIProduct(*updated, &plan); err != nil {
+	if err := fromAPIProduct(*updated, &plan.ProductResourceModel); err != nil {
 		resp.Diagnostics.AddError("Error decoding Paddle product response", err.Error())
 		return
 	}
@@ -266,7 +288,7 @@ func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest
 }
 
 func (r *ProductResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state ProductResourceModel
+	var state productResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return

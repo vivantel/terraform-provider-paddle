@@ -32,17 +32,27 @@ type NotificationSettingResource struct {
 }
 
 type NotificationSettingResourceModel struct {
-	ID                     types.String   `tfsdk:"id"`
-	Description            types.String   `tfsdk:"description"`
-	Type                   types.String   `tfsdk:"type"`
-	Destination            types.String   `tfsdk:"destination"`
-	Active                 types.Bool     `tfsdk:"active"`
-	SubscribedEvents       types.List     `tfsdk:"subscribed_events"`
-	APIVersion             types.Int64    `tfsdk:"api_version"`
-	IncludeSensitiveFields types.Bool     `tfsdk:"include_sensitive_fields"`
-	TrafficSource          types.String   `tfsdk:"traffic_source"`
-	EndpointSecretKey      types.String   `tfsdk:"endpoint_secret_key"`
-	Timeouts               timeouts.Value `tfsdk:"timeouts"`
+	ID                     types.String `tfsdk:"id"`
+	Description            types.String `tfsdk:"description"`
+	Type                   types.String `tfsdk:"type"`
+	Destination            types.String `tfsdk:"destination"`
+	Active                 types.Bool   `tfsdk:"active"`
+	SubscribedEvents       types.List   `tfsdk:"subscribed_events"`
+	APIVersion             types.Int64  `tfsdk:"api_version"`
+	IncludeSensitiveFields types.Bool   `tfsdk:"include_sensitive_fields"`
+	TrafficSource          types.String `tfsdk:"traffic_source"`
+	EndpointSecretKey      types.String `tfsdk:"endpoint_secret_key"`
+}
+
+// notificationSettingResourceStateModel is what Create/Read/Update/Delete
+// decode Plan/State into — see productResourceStateModel's comment in
+// product_resource.go for why this wrapper exists instead of a Timeouts
+// field directly on NotificationSettingResourceModel
+// (notification_setting_data_source.go decodes state into that exact type
+// too, and its schema has no "timeouts" attribute).
+type notificationSettingResourceStateModel struct {
+	NotificationSettingResourceModel
+	Timeouts timeouts.Value `tfsdk:"timeouts"`
 }
 
 func (r *NotificationSettingResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -246,13 +256,13 @@ func fromAPINotificationSetting(ctx context.Context, ns client.NotificationSetti
 }
 
 func (r *NotificationSettingResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan NotificationSettingResourceModel
+	var plan notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	createBody, diags := toAPINotificationSettingCreate(ctx, plan)
+	createBody, diags := toAPINotificationSettingCreate(ctx, plan.NotificationSettingResourceModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -291,7 +301,7 @@ func (r *NotificationSettingResource) Create(ctx context.Context, req resource.C
 		created = updated
 	}
 
-	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *created, &plan)...)
+	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *created, &plan.NotificationSettingResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -315,7 +325,7 @@ func eventNamesOf(ns *client.NotificationSetting) []string {
 func (r *NotificationSettingResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	// Fetch just id, not the whole model — same reasoning as every other
 	// resource's Read() in this provider.
-	var state NotificationSettingResourceModel
+	var state notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
@@ -339,7 +349,7 @@ func (r *NotificationSettingResource) Read(ctx context.Context, req resource.Rea
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *ns, &state)...)
+	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *ns, &state.NotificationSettingResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -347,19 +357,19 @@ func (r *NotificationSettingResource) Read(ctx context.Context, req resource.Rea
 }
 
 func (r *NotificationSettingResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan NotificationSettingResourceModel
+	var plan notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var state NotificationSettingResourceModel
+	var state notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	updateBody, diags := toAPINotificationSettingUpdate(ctx, plan)
+	updateBody, diags := toAPINotificationSettingUpdate(ctx, plan.NotificationSettingResourceModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -379,7 +389,7 @@ func (r *NotificationSettingResource) Update(ctx context.Context, req resource.U
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *updated, &plan)...)
+	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *updated, &plan.NotificationSettingResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -387,7 +397,7 @@ func (r *NotificationSettingResource) Update(ctx context.Context, req resource.U
 }
 
 func (r *NotificationSettingResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state NotificationSettingResourceModel
+	var state notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return

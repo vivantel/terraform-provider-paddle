@@ -24,7 +24,6 @@ func baseDiscountModel() DiscountResourceModel {
 		RestrictTo:                types.ListNull(types.StringType),
 		ExpiresAt:                 types.StringNull(),
 		DiscountGroupID:           types.StringNull(),
-		Timeouts:                  nullTimeouts(),
 	}
 }
 

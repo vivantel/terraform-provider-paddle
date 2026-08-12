@@ -47,11 +47,13 @@ func TestTimeoutFiring_ConfiguredValueOverridesDefault(t *testing.T) {
 
 	pr := &ProductResource{client: client.New(srv.URL, "test-key")}
 
-	req := testDeleteState(t, pr, ProductResourceModel{
-		ID:          types.StringValue("pro_slow"),
-		Name:        types.StringValue("x"),
-		TaxCategory: types.StringValue("standard"),
-		Timeouts:    timeoutsValueWithDelete(configuredTimeout),
+	req := testDeleteState(t, pr, productResourceStateModel{
+		ProductResourceModel: ProductResourceModel{
+			ID:          types.StringValue("pro_slow"),
+			Name:        types.StringValue("x"),
+			TaxCategory: types.StringValue("standard"),
+		},
+		Timeouts: timeoutsValueWithDelete(configuredTimeout),
 	})
 
 	var resp resource.DeleteResponse

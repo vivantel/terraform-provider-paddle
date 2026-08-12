@@ -275,14 +275,39 @@ actually fails around 300ms, not the old 60s default, while also proving
 the handler really would have succeeded eventually (ruling out a false
 pass from an unrelated fast failure).
 
+**Post-review fix (2026-08-12, same PR, before merge)**: CI's `acceptance`
+job caught a real bug the local-only unit/mock tests couldn't have —
+adding `Timeouts` directly to the five `*ResourceModel` structs broke
+every singular data source (`paddle_product`, `paddle_price`,
+`paddle_discount`, `paddle_discount_group`, `paddle_notification_setting`)
+with `Value Conversion Error: Struct defines fields not found in object:
+timeouts`, because each singular data source's `Read()` decodes state
+into that exact same struct type, and a data source's schema has no
+`timeouts` attribute (only resources get one). Fixed by moving `Timeouts`
+out of the shared `*ResourceModel` structs (used unchanged by data
+sources) into a resource-only wrapper struct per resource
+(`productResourceStateModel`, `priceResourceStateModel`,
+`discountResourceStateModel`, `discountGroupResourceStateModel`,
+`notificationSettingResourceStateModel`) that embeds the base model plus
+`Timeouts timeouts.Value` — `terraform-plugin-framework`'s reflection
+promotes the embedded struct's `tfsdk`-tagged fields (confirmed via
+`internal/reflect/helpers.go`'s explicit anonymous-field support), so
+`toAPI*`/`fromAPI*` functions keep operating on the plain base model
+unchanged; only `Create`/`Read`/`Update`/`Delete` now decode into the
+wrapper type and pass `.XResourceModel` through to those functions. This
+is exactly the kind of gap `docs/decisions/0003-acceptance-tests-against-
+live-sandbox.md` exists to catch — `go build`/unit tests/mock tests all
+passed clean the whole time this bug was present.
+
 `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
-`golangci-lint run ./...` all clean. `tfplugindocs generate` picked up
-the new `timeouts` attribute on all five resources automatically (only
-those five `docs/resources/*.md` files changed). Real-sandbox
-verification (all five resources' existing acceptance tests still
-passing unchanged, proving default-60s behavior preservation) pending
-CI's `acceptance` job on this step's PR — not yet confirmed as of this
-line being written. Depends on: none, but should land before Step 3
+`golangci-lint run ./...` all clean after the fix. `tfplugindocs
+generate` diff unchanged (still only the five `docs/resources/*.md`
+files — confirms data source docs are unaffected, as expected).
+Real-sandbox verification (all five resources' existing acceptance tests,
+including the singular data sources, passing unchanged — proving both
+default-60s behavior preservation and the post-review fix) pending CI's
+`acceptance` job on this step's PR's next run — not yet confirmed as of
+this line being written. Depends on: none, but should land before Step 3
 (the mock-server harness is partly justified by this step's own
 verification need).
 
