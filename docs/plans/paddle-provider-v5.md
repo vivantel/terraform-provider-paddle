@@ -501,15 +501,35 @@ enumeration mentioned).
    `fromAPISubscription`/`fromAPICustomer` are reused verbatim from the
    singular data sources and already unit-tested there, so no duplicate
    test needed. Acceptance tests for all four
-   (`*_data_source_acc_test.go`), each reusing an existing fixture per the
-   plan's instruction (`findTestSubscription`,
-   `createAdjustmentFixtureTransaction`, the sandbox's existing
-   notifications, a fresh customer fixture matching the singular
-   `paddle_customer` test's own pattern) rather than provisioning new
-   ones — plus a shared `checkListContainsID`/`checkListAttrsSet` helper
-   pair (`plural_data_sources_acc_test.go`) since a plural data source's
-   filter can legitimately return more than the one fixture record a test
+   (`*_data_source_acc_test.go`), each reusing an existing fixture rather
+   than provisioning new ones — `findTestSubscription`, the sandbox's
+   existing notifications, a fresh customer fixture matching the singular
+   `paddle_customer` test's own pattern — plus a shared
+   `checkListContainsID`/`checkListAttrsSet` helper pair
+   (`plural_data_sources_acc_test.go`) since a plural data source's filter
+   can legitimately return more than the one fixture record a test
    provisioned, unlike a singular data source's exact-index checks.
+
+**Post-review fix (2026-08-12, same PR, before merge)**: CI's `acceptance`
+job's first run failed — `TestAccPaddleTransactionsDataSource_byFilter`
+(this step's new test) and the pre-existing
+`TestAccPaddleTransactionDataSource_byFilter` both hit real sandbox `429
+too_many_requests`/`context deadline exceeded` on `CreateCustomer`. Root
+cause: this step's transactions test originally called
+`createAdjustmentFixtureTransaction`, which provisions its own fresh
+Customer + Address + Transaction via direct API calls — a fifth
+customer-creating fixture call added to an already-marginal shared
+sandbox rate-limit budget within one CI run (every other acceptance test
+with its own customer fixture runs in the same job). A re-run without
+any code change reproduced the same failure, confirming this wasn't a
+one-off flake. Fixed by rewriting the test to filter by the pinned
+`findTestSubscription` fixture's `subscription_id` instead — its existing
+recurring billing history already has transactions, so the test needs
+*zero* new fixture provisioning, not just a different existing fixture to
+reuse. This is a strictly better fit for the plan's own "reuse existing
+fixtures where possible" instruction than the original
+`createAdjustmentFixtureTransaction` choice was, not just a rate-limit
+workaround.
 
 `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`
 (including the new unit tests; acceptance tests skip cleanly without
@@ -517,7 +537,7 @@ enumeration mentioned).
 `tfplugindocs generate` produced exactly the four expected new files
 (`docs/data-sources/{subscriptions,transactions,notifications,customers}.md`),
 no other diff. Real-sandbox verification of all four data sources
-pending CI's `acceptance` job on this step's PR. Depends on: none.
+pending CI's `acceptance` job re-run on this step's PR. Depends on: none.
 
 Same structure as v4's singular data sources
 (`internal/provider/subscription_data_source.go` etc.) but returning a
