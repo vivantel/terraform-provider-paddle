@@ -101,6 +101,19 @@ func (p *PaddleProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		return
 	}
 
+	// PADDLE_BASE_URL is a deliberately undocumented, internal-only
+	// escape hatch — not a schema attribute, no public docs — that lets
+	// this provider's own mock-server tests
+	// (internal/provider/mockserver_test.go) point resource.Test's real
+	// Create/Read/Update/Delete lifecycle at an httptest.Server instead
+	// of Paddle's real sandbox/production URLs, via testAccProtoV6ProviderFactories.
+	// Real users have no supported way to reach this: it's read directly
+	// from the environment, never surfaced in the schema or
+	// MarkdownDescription above, and unset in any real terraform.
+	if override := os.Getenv("PADDLE_BASE_URL"); override != "" {
+		baseURL = override
+	}
+
 	c := client.New(baseURL, apiKey)
 	resp.DataSourceData = c
 	resp.ResourceData = c

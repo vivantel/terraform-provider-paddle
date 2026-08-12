@@ -367,7 +367,59 @@ pass unchanged (proving the default-60s behavior-preservation claim in
 
 ## Step 3: mock-server test harness + retrofit
 
-Status: not started. Depends on: none structurally, but naturally
+Status: done — 2026-08-12. `internal/provider/mockserver_test.go`:
+`newMockPaddleServer(t, handler)` stands up an `httptest.Server`, points
+this provider's client at it via a new, deliberately undocumented
+internal-only escape hatch (`provider.go`'s `Configure()` now honors a
+`PADDLE_BASE_URL` env var override, checked after the `environment`
+switch — not part of the public schema, no docs, sourced only from the
+environment, real users have no supported way to reach it), and returns
+`ProtoV6ProviderFactories` wired the same shape
+`testAccProtoV6ProviderFactories` (`provider_test.go`) uses — so a mock
+test drops straight into `resource.Test` with `IsUnitTest: true`,
+exercising a resource's real `Create`/`Read`/`Update`/`Delete` methods
+through the actual Plugin Framework lifecycle (confirmed
+`terraform-plugin-testing` auto-installs a `terraform` binary via
+`hc-install` when none is on `PATH`, exactly as needed in this sandbox),
+not just a client method call — this is the "one level deeper than
+`sweep_test.go`'s existing `httptest.NewServer` precedent" the plan
+called for.
+
+All five resources retrofitted with `*_resource_mock_test.go` files
+(`TestMockPaddle<X>_basicLifecycle`), each with its own small in-memory
+`sync.Mutex`-guarded store implementing just enough of that resource's
+real endpoint shape (confirmed against `internal/client/client.go`'s
+actual request/response types, not guessed) to drive create → update →
+destroy: `product`/`price`/`discount`/`discount_group` archive-on-destroy
+(status flips to `archived` via the same `statusPatch` shape the real
+client sends), `notification_setting` a real hard `DELETE` (no archive
+fallback, matching that resource's real behavior) — each test asserts
+the post-destroy store state matches. Existing `*_resource_acc_test.go`
+files are completely untouched (confirmed via `git status` before
+committing — only `provider.go` and new `*_mock_test.go`/
+`mockserver_test.go` files changed). Filename convention makes mock vs.
+real-sandbox unambiguous at a glance: `*_resource_acc_test.go` (real
+sandbox, gated on `PADDLE_API_KEY`/`TF_ACC`) vs. `*_resource_mock_test.go`
+(mock, `IsUnitTest: true`, runs under plain `go test ./...`).
+
+The harness's reusability is proven two ways, not just asserted: Step 2's
+`TestTimeoutFiring_ConfiguredValueOverridesDefault` predates this file and
+used a lower-level one-off (`testDeleteState`, not this harness — the
+plan flagged this as an acceptable reordering at the time since Step 3
+hadn't landed yet), but all five of *this* step's retrofits share the one
+`newMockPaddleServer` helper, and a follow-up pass could migrate Step 2's
+test onto it too (not done here — out of scope, the ceiling/precedence
+logic that test verifies isn't resource-specific, so it doesn't need
+`resource.Test`'s full lifecycle the way CRUD retrofits do).
+
+`go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...` (including
+all five new mock tests, ~4-5s each, and every pre-existing test) all
+pass; `go test ./... -run TestMock -v` isolates just the five retrofits.
+`golangci-lint run ./...` clean. `tfplugindocs generate` produces no diff
+(no schema change this step). Real-sandbox acceptance tests untouched —
+this step needs no CI `acceptance` job confirmation of its own beyond
+"still passes," since nothing it touches changes resource behavior; PR
+CI confirms this. Depends on: none structurally, but naturally
 overlaps Step 2 (which needs a slice of this harness regardless).
 
 Read `docs/guardrails/mock-tests-supplement-not-replace-acceptance-tests.md`
