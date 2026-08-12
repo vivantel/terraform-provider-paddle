@@ -22,7 +22,20 @@ import (
 // TestMain wires up terraform-plugin-testing's -sweep flag handling.
 // Required once per package for resource.AddTestSweepers to have any
 // effect — see docs/decisions/0009-tflog-observability-and-acceptance-test-sweepers.md.
+//
+// Also widens the client's retry tuning for the whole binary run when
+// TF_ACC is set — see client.RelaxRetryTuningForAcceptanceTests' own
+// comment for why: this repo's acceptance-test suite runs many calls
+// back-to-back against one shared sandbox account and can trigger
+// sustained rate-limiting the client's production-sized retry defaults
+// aren't built to ride out, found via a real repeated CI failure,
+// 2026-08-12. Set before resource.TestMain(m) runs any test — the
+// package-var mutation only takes effect if it happens before the first
+// client call any test makes.
 func TestMain(m *testing.M) {
+	if os.Getenv("TF_ACC") != "" {
+		client.RelaxRetryTuningForAcceptanceTests()
+	}
 	resource.TestMain(m)
 }
 

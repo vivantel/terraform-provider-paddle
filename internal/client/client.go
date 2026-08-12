@@ -64,6 +64,36 @@ var (
 	retryOverallBudget = 60 * time.Second
 )
 
+// RelaxRetryTuningForAcceptanceTests widens this client's retry tuning for
+// the whole test binary run — intended to be called exactly once, from
+// internal/provider's TestMain, only when TF_ACC is set. The production
+// defaults above (60s overall budget, Retry-After capped at 30s) are
+// sized for a real terraform apply/destroy call an interactive user is
+// waiting on; this repo's own acceptance-test suite instead runs many
+// calls back-to-back against one shared sandbox account within a single
+// CI job, which can trigger genuinely sustained rate-limiting the
+// production defaults were never sized to ride out.
+//
+// Found via a real, repeated CI failure, 2026-08-12 — confirmed do() was
+// already correctly honoring a 429 response's Retry-After header
+// (waitBeforeRetry/parseRetryAfter), not ignoring it; the problem was
+// that even a correctly-read Retry-After got clamped to
+// retryMaxRetryAfter (30s), and the 60s retryOverallBudget only leaves
+// room for one or two such waits before do() gives up and returns the
+// 429 to the caller — insufficient once the account is under sustained
+// throttling, even though the client is honoring the header. Widening
+// both (not just retryMaxRetryAfter alone) is the actual fix — either
+// one without the other still hits the same wall.
+//
+// internal/client is Go's `internal/` convention — unimportable outside
+// this module — so this exported knob adds no public API surface beyond
+// this repo's own test code.
+func RelaxRetryTuningForAcceptanceTests() {
+	retryMaxRetryAfter = 5 * time.Minute
+	retryOverallBudget = 10 * time.Minute
+	retryMaxAttempts = 8
+}
+
 // withDefaultTimeout applies retryOverallBudget to ctx only when ctx does
 // not already carry a deadline of its own. A resource with a configured
 // timeouts{} block derives its own deadline (see
@@ -1943,6 +1973,35 @@ type notificationListEnvelope struct {
 func (c *Client) GetNotification(ctx context.Context, id string) (*Notification, error) {
 	var env notificationEnvelope
 	if err := c.do(ctx, http.MethodGet, "/notifications/"+id, nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+// ReplayNotification is actions.NotificationReplayAction's backend —
+// POST /notifications/{id}/replay, confirmed real against the real API
+// reference, docs/facts/0007-replay-endpoint-and-timeouts-module-confirmed.md:
+// "Attempts to resend a delivered or failed notification using its ID."
+// Replaying creates a *new* notification entity linked to the same
+// underlying event and returns that new notification's data — it does
+// not mutate or re-deliver the original notification record in place, so
+// the id this returns is never the same as the id passed in.
+//
+// Uses the regular retry-wrapped do(), not doNoRetry — unlike the
+// money-moving actions (docs/guardrails/money-moving-actions-no-blanket-retry.md),
+// a replay isn't dangerous to retry: confirmed against the real API
+// reference this is a plain POST with no stated idempotency-key support
+// (same as every other write this client makes) but no stated
+// side effect beyond queuing another delivery attempt either — the worst
+// case of a duplicate replay (network hiccup causes a retry after the
+// first attempt actually succeeded) is one extra webhook delivery
+// attempt, not a real-world harm like a duplicate charge
+// (docs/decisions/0012-v5-scope-pii-data-sources-timeouts-testing.md item
+// 4's reasoning, not purely inferred from the "low stakes" framing
+// without checking the endpoint's own documented behavior).
+func (c *Client) ReplayNotification(ctx context.Context, id string) (*Notification, error) {
+	var env notificationEnvelope
+	if err := c.do(ctx, http.MethodPost, "/notifications/"+id+"/replay", nil, &env); err != nil {
 		return nil, err
 	}
 	return &env.Data, nil

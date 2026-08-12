@@ -150,12 +150,15 @@ func (p *PaddleProvider) DataSources(_ context.Context) []func() datasource.Data
 	}
 }
 
-// Actions — the first this provider has ever had, see
-// docs/decisions/0010-v3-scope-lifecycle-actions.md for why these five
-// operations (a refund/credit, and four subscription lifecycle ops) are
+// Actions — the first five (a refund/credit, and four subscription
+// lifecycle ops) were this provider's first ever, see
+// docs/decisions/0010-v3-scope-lifecycle-actions.md for why they're
 // modeled as actions rather than resources: each is a one-time,
 // irreversible "verb" against a Paddle entity with no real CRUD
-// lifecycle of its own to reconcile on a later plan.
+// lifecycle of its own to reconcile on a later plan. The sixth
+// (notification replay, v5) isn't irreversible/financial the same way —
+// see docs/decisions/0012-v5-scope-pii-data-sources-timeouts-testing.md
+// item 4 — but still fits "one endpoint, one verb, no CRUD lifecycle."
 func (p *PaddleProvider) Actions(_ context.Context) []func() action.Action {
 	return []func() action.Action{
 		actions.NewAdjustmentAction,
@@ -163,5 +166,6 @@ func (p *PaddleProvider) Actions(_ context.Context) []func() action.Action {
 		actions.NewSubscriptionPauseAction,
 		actions.NewSubscriptionResumeAction,
 		actions.NewSubscriptionChargeAction,
+		actions.NewNotificationReplayAction,
 	}
 }

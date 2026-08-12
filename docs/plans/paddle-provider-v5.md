@@ -585,8 +585,65 @@ files, `actions_wiring_test.go`'s count updated and passing.
 
 ## Step 5: `paddle_notification_replay` action
 
-Status: not started. Depends on: none, but natural to do after Step 4
-(shares context with the notification data sources).
+Status: done — 2026-08-12. `internal/client/client.go`'s
+`ReplayNotification(ctx, id)` — `POST /notifications/{id}/replay`, uses
+the regular retry-wrapped `do()`, not `doNoRetry`, per the decision (a
+replay's worst-case duplicate is one extra delivery attempt, not a
+money-moving harm). `internal/provider/actions/action_paddle_notification_replay.go`
+— single `notification_id` field, no search-before-invoke check
+(deliberately, per decision 0012 item 4), follows
+`action_paddle_subscription_cancel.go`'s file structure. Registered in
+`provider.go`'s `Actions()` (comment updated: five → six actions, the
+new one explicitly noted as not irreversible/financial the way the
+other five are). `actions_wiring_test.go` and
+`actions/schema_test.go` both updated for the sixth action (renamed
+`TestProviderServer_ExposesAllFiveActionSchemas` →
+`...AllSixActionSchemas`).
+
+Unit test: `internal/client/replay_notification_test.go` confirms the
+exact request (`POST /notifications/{id}/replay`, no body) and response
+decoding (`replayed.ID` differs from the id passed in — a new entity, not
+the original mutated). Acceptance test:
+`action_paddle_notification_replay_acc_test.go`'s
+`TestAccPaddleNotificationReplay_createsNewNotification` reuses whatever
+notification already exists in the sandbox with status `delivered`/
+`failed` (the only statuses the endpoint accepts) — same
+self-provisioning-impossible leniency
+`TestAccPaddleNotificationDataSource_basic` already uses — and proves the
+plan's own Definition of Done directly: snapshots every notification ID
+for that `notification_setting_id` before invoking, replays, then
+confirms a genuinely new ID appears after (via `GET /notifications`
+through `ListNotificationsFiltered`, not the Paddle dashboard, but the
+same underlying confirmation the Definition of Done calls for) — not
+just that the action call didn't error.
+
+`go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
+`golangci-lint run ./...` all clean. `tfplugindocs generate` produced
+exactly the one expected new file (`docs/actions/notification_replay.md`),
+no other diff. Real-sandbox verification confirmed via CI's `acceptance`
+job on PR #34 (https://github.com/vivantel/terraform-provider-paddle/pull/34)
+— `TestAccPaddleNotificationReplay_createsNewNotification` itself passed
+every time it ran. Getting the whole job green took real investigation,
+not just retries: the same unrelated, pre-existing tests
+(`TestAccPaddleTransactionDataSource_byFilter`/
+`TestAccPaddleTransactionsDataSource_byFilter`) failed on real sandbox
+`429`s across 5 consecutive attempts (including a 15-minute cooldown),
+confirming sustained account-wide rate-limit exhaustion, not a one-off
+flake. Root-caused with the user's help (asked "do we respect
+Retry-After?"): `do()` was already correctly honoring the header
+(`waitBeforeRetry`/`parseRetryAfter`), but a correctly-read `Retry-After`
+still got clamped to `retryMaxRetryAfter` (30s), and the 60s
+`retryOverallBudget` only left room for one or two such waits before
+giving up — not enough to ride out sustained throttling even though the
+client was behaving correctly. Fixed with a new exported
+`client.RelaxRetryTuningForAcceptanceTests()` (production defaults
+unchanged), wired into `internal/provider`'s existing `TestMain` when
+`TF_ACC` is set — the very next CI run passed clean on the first
+attempt, confirming the diagnosis. This fix is broader than Step 5 (it
+benefits every step's acceptance-test verification, retroactively too)
+but is recorded here since this is where it was found and fixed.
+Depends on: none, but natural to do after Step 4 (shares context with
+the notification data sources).
 
 Read `docs/decisions/0012-v5-scope-pii-data-sources-timeouts-testing.md`
 item 4 and `docs/facts/0007-replay-endpoint-and-timeouts-module-confirmed.md`
