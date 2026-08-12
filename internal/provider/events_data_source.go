@@ -45,7 +45,27 @@ func (d *EventsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 			"`events` list, indistinguishable from \"nothing of that type ever happened\"; there is no way " +
 			"to look further back. Paddle's `/events` API also has no date-range filter at all (confirmed " +
 			"against the real API reference, 2026-08-11) — `type` is the only server-side filter this data " +
-			"source can apply.",
+			"source can apply.\n\n" +
+			// PII warning below follows
+			// docs/guardrails/pii-bearing-data-sources-need-state-security-warning.md's
+			// "opaque/variable-shape" treatment: `data` isn't a dedicated PII
+			// field, it's arbitrary per-event-type JSON that *can* carry PII
+			// depending on event type (e.g. `customer.created`'s payload is a
+			// full customer record) — worded as a possibility, not a certainty,
+			// since redacting it reliably isn't possible given the shape varies
+			// arbitrarily. Don't shorten or soften this.
+			"**⚠️ This data source's `data` field can carry customer PII, depending on event type, and " +
+			"writes it into your Terraform state file.** Unlike `paddle_customer`'s dedicated `email`/`name` " +
+			"attributes, `data` is arbitrary JSON whose shape varies per event type — a `customer.created` " +
+			"or `customer.updated` event's `data` payload *is* a full customer record (email, name, and " +
+			"more), while a `product.created` event's is not. There is no reliable way to filter or redact " +
+			"PII out of `data` before it reaches state, because the shape isn't known in advance. Terraform " +
+			"persists every data source read into state, in plaintext by default, on every `plan`/`refresh` " +
+			"this data source is used in — not just once. If you use `paddle_events` with any customer-" +
+			"related `type` filter (or no filter at all), treat the resulting state file as sensitive — an " +
+			"encrypted, access-controlled remote backend, not local state or an unencrypted bucket — the " +
+			"same recommendation this provider's Actions section gives for financial risk, applied here to " +
+			"data exposure instead.",
 		Attributes: map[string]schema.Attribute{
 			"type": schema.ListAttribute{
 				Optional:            true,

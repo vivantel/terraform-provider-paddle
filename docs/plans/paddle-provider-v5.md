@@ -162,7 +162,29 @@ real CI runs, not one giant branch.
 
 ## Step 1: PII fix + full audit
 
-Status: not started. Depends on: none.
+Status: done — 2026-08-12. `paddle_events`' schema `MarkdownDescription`
+and `README.md` both got the opaque/variable-shape PII warning
+(worded as "`data` *can* carry PII depending on event type," not "this
+field is PII," per the updated guardrail). Full audit pass done over
+every `internal/provider/*_resource.go`/`*_data_source.go` schema and
+every `internal/provider/actions/*.go` action: grepped every
+`schema.*Attribute`/`actionschema.*Attribute` definition across all 21
+files for PII-shaped names (email/name/address/phone/tax/secret/key/
+token/customer) and manually read each hit. Findings: `endpoint_secret_key`
+(`notification_setting_resource.go` and `notification_setting_data_source.go`)
+already has `Sensitive: true` in both places — no gap. No other field
+beyond `paddle_customer`'s existing `email`/`name` and `paddle_events`'
+`data` carries fetched customer PII; `notification_setting`'s
+`destination` can be an email address but is a user-supplied config
+value the user already typed in, not PII fetched from Paddle's API, so
+it's out of this guardrail's scope. No `Sensitive` gaps found anywhere
+else. No new PII-bearing fields found, so the guardrail's "Applies to"
+list needed no additions beyond its existing `paddle_customers` (v5)
+forward reference, which stays as a placeholder for Step 4. `go build
+./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`, `golangci-lint
+run ./...` all clean; `tfplugindocs generate` produced the expected
+single-file diff (`docs/data-sources/events.md`), now committed.
+Depends on: none.
 
 **Do this first** — it's the fastest step and closes a real gap in
 already-shipped code, not just new work.
