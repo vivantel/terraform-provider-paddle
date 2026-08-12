@@ -144,6 +144,12 @@ Like the default-payment-link setting above, this is an ongoing sandbox account 
 
 There is no `paddle_address` data source or resource in this provider — `paddle_customer`'s email/name alone resolves the actual discovery gap (finding a subscription's or transaction's owning customer) without pulling in postal-address PII too.
 
+### `paddle_events` — `data` can also carry PII
+
+`paddle_events` lists Paddle account events, optionally filtered by `type`. Its `data` attribute is arbitrary JSON whose shape varies by event type — it isn't a dedicated PII field like `paddle_customer`'s `email`/`name`, but it can carry the same kind of PII depending on what happened: a `customer.created` or `customer.updated` event's `data` payload *is* a full customer record, while a `product.created` event's is not.
+
+**⚠️ If you use `paddle_events` with a customer-related `type` filter (or no filter at all), its `data` field can write real customer PII into your Terraform state file, in plaintext by default, on every `plan`/`refresh` — same as `paddle_customer` above.** Because `data`'s shape isn't known in advance, there is no reliable way to filter or redact PII out of it before it reaches state; the mitigation is the same as `paddle_customer`'s: treat any state file that uses `paddle_events` as sensitive, with an encrypted, access-controlled remote backend rather than local state or an unencrypted bucket.
+
 ## Development
 
 Requires Go 1.25+ (bumped from 1.22 on 2026-08-08 — see `docs/plans/paddle-provider-v1.md`'s resolved "Open question: bump the go version?").
