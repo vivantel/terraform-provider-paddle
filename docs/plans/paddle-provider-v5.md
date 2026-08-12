@@ -536,8 +536,10 @@ workaround.
 `PADDLE_API_KEY`), `golangci-lint run ./...` all clean.
 `tfplugindocs generate` produced exactly the four expected new files
 (`docs/data-sources/{subscriptions,transactions,notifications,customers}.md`),
-no other diff. Real-sandbox verification of all four data sources
-pending CI's `acceptance` job re-run on this step's PR. Depends on: none.
+no other diff. Real-sandbox verification confirmed via CI's `acceptance`
+job on PR #33's re-run (https://github.com/vivantel/terraform-provider-paddle/pull/33)
+— `build`/`docs`/`lint`/`acceptance` all pass, including all four new
+data sources. Depends on: none.
 
 Same structure as v4's singular data sources
 (`internal/provider/subscription_data_source.go` etc.) but returning a
