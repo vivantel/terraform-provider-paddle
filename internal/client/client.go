@@ -64,6 +64,36 @@ var (
 	retryOverallBudget = 60 * time.Second
 )
 
+// RelaxRetryTuningForAcceptanceTests widens this client's retry tuning for
+// the whole test binary run — intended to be called exactly once, from
+// internal/provider's TestMain, only when TF_ACC is set. The production
+// defaults above (60s overall budget, Retry-After capped at 30s) are
+// sized for a real terraform apply/destroy call an interactive user is
+// waiting on; this repo's own acceptance-test suite instead runs many
+// calls back-to-back against one shared sandbox account within a single
+// CI job, which can trigger genuinely sustained rate-limiting the
+// production defaults were never sized to ride out.
+//
+// Found via a real, repeated CI failure, 2026-08-12 — confirmed do() was
+// already correctly honoring a 429 response's Retry-After header
+// (waitBeforeRetry/parseRetryAfter), not ignoring it; the problem was
+// that even a correctly-read Retry-After got clamped to
+// retryMaxRetryAfter (30s), and the 60s retryOverallBudget only leaves
+// room for one or two such waits before do() gives up and returns the
+// 429 to the caller — insufficient once the account is under sustained
+// throttling, even though the client is honoring the header. Widening
+// both (not just retryMaxRetryAfter alone) is the actual fix — either
+// one without the other still hits the same wall.
+//
+// internal/client is Go's `internal/` convention — unimportable outside
+// this module — so this exported knob adds no public API surface beyond
+// this repo's own test code.
+func RelaxRetryTuningForAcceptanceTests() {
+	retryMaxRetryAfter = 5 * time.Minute
+	retryOverallBudget = 10 * time.Minute
+	retryMaxAttempts = 8
+}
+
 // withDefaultTimeout applies retryOverallBudget to ctx only when ctx does
 // not already carry a deadline of its own. A resource with a configured
 // timeouts{} block derives its own deadline (see
