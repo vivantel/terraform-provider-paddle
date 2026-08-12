@@ -1948,6 +1948,35 @@ func (c *Client) GetNotification(ctx context.Context, id string) (*Notification,
 	return &env.Data, nil
 }
 
+// ReplayNotification is actions.NotificationReplayAction's backend —
+// POST /notifications/{id}/replay, confirmed real against the real API
+// reference, docs/facts/0007-replay-endpoint-and-timeouts-module-confirmed.md:
+// "Attempts to resend a delivered or failed notification using its ID."
+// Replaying creates a *new* notification entity linked to the same
+// underlying event and returns that new notification's data — it does
+// not mutate or re-deliver the original notification record in place, so
+// the id this returns is never the same as the id passed in.
+//
+// Uses the regular retry-wrapped do(), not doNoRetry — unlike the
+// money-moving actions (docs/guardrails/money-moving-actions-no-blanket-retry.md),
+// a replay isn't dangerous to retry: confirmed against the real API
+// reference this is a plain POST with no stated idempotency-key support
+// (same as every other write this client makes) but no stated
+// side effect beyond queuing another delivery attempt either — the worst
+// case of a duplicate replay (network hiccup causes a retry after the
+// first attempt actually succeeded) is one extra webhook delivery
+// attempt, not a real-world harm like a duplicate charge
+// (docs/decisions/0012-v5-scope-pii-data-sources-timeouts-testing.md item
+// 4's reasoning, not purely inferred from the "low stakes" framing
+// without checking the endpoint's own documented behavior).
+func (c *Client) ReplayNotification(ctx context.Context, id string) (*Notification, error) {
+	var env notificationEnvelope
+	if err := c.do(ctx, http.MethodPost, "/notifications/"+id+"/replay", nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
 // NotificationListFilter holds ListNotificationsFiltered's optional
 // server-side filters.
 type NotificationListFilter struct {

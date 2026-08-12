@@ -24,6 +24,7 @@ func TestActions_MetadataAndSchemaBuildWithoutError(t *testing.T) {
 		"paddle_subscription_pause":  NewSubscriptionPauseAction,
 		"paddle_subscription_resume": NewSubscriptionResumeAction,
 		"paddle_subscription_charge": NewSubscriptionChargeAction,
+		"paddle_notification_replay": NewNotificationReplayAction,
 	}
 
 	for wantTypeName, newAction := range newActions {

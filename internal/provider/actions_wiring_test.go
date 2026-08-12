@@ -7,15 +7,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
 
-// TestProviderServer_ExposesAllFiveActionSchemas exercises the real proto
+// TestProviderServer_ExposesAllSixActionSchemas exercises the real proto
 // layer end to end — GetProviderSchema makes no network call (pure schema
 // assembly), so this runs without PADDLE_API_KEY or TF_ACC, unlike this
 // provider's TestAcc* suite. Confirms Actions() is actually wired into
 // New() (not just present on PaddleProvider in isolation — see
 // internal/provider/actions' own TestActions_MetadataAndSchemaBuildWithoutError
 // for that half) and that the Plugin Framework's own action-schema
-// conversion doesn't reject any of the five schemas.
-func TestProviderServer_ExposesAllFiveActionSchemas(t *testing.T) {
+// conversion doesn't reject any of the six schemas.
+func TestProviderServer_ExposesAllSixActionSchemas(t *testing.T) {
 	srv, err := testAccProtoV6ProviderFactories["paddle"]()
 	if err != nil {
 		t.Fatalf("provider factory: %v", err)
@@ -35,6 +35,7 @@ func TestProviderServer_ExposesAllFiveActionSchemas(t *testing.T) {
 		"paddle_subscription_pause",
 		"paddle_subscription_resume",
 		"paddle_subscription_charge",
+		"paddle_notification_replay",
 	}
 	for _, name := range want {
 		if _, ok := resp.ActionSchemas[name]; !ok {
