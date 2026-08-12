@@ -681,8 +681,49 @@ notification entity was created, not just that the action didn't error),
 
 ## Step 6: docs
 
-Status: not started. Depends on: Steps 2, 4, 5 (documents features those
-steps build).
+Status: done — 2026-08-12. `examples/lookup-then-act/main.tf` — a real,
+complete config: `paddle_subscription` (by `customer_id`) →
+`paddle_subscription_cancel`; `paddle_transaction` (by `id`) →
+`paddle_adjustment` refunding `line_items[0].item_id`. `README.md`:
+Actions section gets a pointer to the example right after its existing
+code sample; intro paragraph and Actions section list updated to mention
+the four plural data sources and the sixth action
+(`paddle_notification_replay`) — a real gap from Steps 4/5, which added
+the surfaces but never touched `README.md`'s summary text, closed here
+rather than left for a future session. New "Configuring `timeouts{}`"
+section added to `README.md` (no `docs/guides/` convention existed
+anywhere in this repo, confirmed by checking first, so README is the
+right location per the plan's own instruction) — when to actually
+configure one, the 60s default/no-behavior-change-if-omitted point, and
+the 30m ceiling.
+
+**Definition of Done's "apply it against the sandbox once by hand"**:
+initially confirmed only with `terraform validate` against the real
+built provider schema (`dev_overrides`, no registry needed) — this
+caught a real error (actions weren't valid HCL syntax in the Terraform
+version initially tested against; the cached `hc-install` binary at a
+newer version validated cleanly). Per the user's explicit direction,
+went further than validate-only: added
+`internal/provider/example_lookup_then_act_acc_test.go`
+(`TestAccExampleLookupThenAct_appliesCleanly`), which reads the actual
+published example file from disk (`os.ReadFile`, not a re-typed copy),
+substitutes real fixture IDs (the pinned
+`PADDLE_TEST_CANCELED_SUBSCRIPTION_ID` fixture — safe, since
+`paddle_subscription_cancel`'s own already-canceled short-circuit means
+applying against it exercises the real lookup+action wiring without
+touching the shared *active* fixture other tests depend on — plus a
+fresh disposable transaction fixture, same pattern
+`TestAccPaddleTransactionDataSource_feedsAdjustment` already uses), and
+runs it through `resource.Test` against the real sandbox via CI's
+existing `PADDLE_API_KEY` — no new GitHub Actions workflow needed, and
+this becomes permanent regression coverage rather than a one-time
+manual check.
+
+`go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
+`golangci-lint run ./...` all clean. `tfplugindocs generate` produces no
+diff (no schema change this step). Real-sandbox verification of the
+example itself pending CI's `acceptance` job on this step's PR. Depends
+on: Steps 2, 4, 5 (documents features those steps build).
 
 1. `examples/lookup-then-act/main.tf` — a real, complete example: look up
    a subscription via `paddle_subscription` (or the new plural
