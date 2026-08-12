@@ -721,9 +721,35 @@ manual check.
 
 `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
 `golangci-lint run ./...` all clean. `tfplugindocs generate` produces no
-diff (no schema change this step). Real-sandbox verification of the
-example itself pending CI's `acceptance` job on this step's PR. Depends
-on: Steps 2, 4, 5 (documents features those steps build).
+diff (no schema change this step).
+
+**Post-review fix (2026-08-12, same PR, before merge)**: CI's
+`acceptance` job caught a real bug in the new test —
+`TestAccExampleLookupThenAct_appliesCleanly` called
+`findTestSubscription(t, c, "canceled")`, but that helper always checks
+`PADDLE_TEST_SUBSCRIPTION_ID` (the pinned *active* fixture other tests
+depend on staying active) first regardless of the `status` argument
+passed in, and skips if it doesn't match — it can never find the
+canceled fixture this test actually needed. This repo already has a
+dedicated `findCanceledTestSubscription` helper for exactly this case
+(`action_paddle_subscription_acc_test.go`, added for
+`TestAccPaddleSubscriptionCancel_alreadyCanceledShortCircuits`, whose own
+comment explains why the two aren't the same function) — should have
+been used from the start. Fixed by switching to it; the test now skips
+cleanly with a clear message when no canceled fixture exists rather than
+silently skipping for the wrong reason.
+
+The same CI run also showed `TestAccPaddleNotificationDataSource_basic`
+failing (`status` expected `queued_for_retry`, got `needs_retry`) —
+confirmed via `git log` this test hasn't been touched since its original
+v4 commit, unrelated to this PR's diff; left as a separate, real,
+pre-existing issue for a future session rather than fixed here (out of
+Step 6's scope).
+
+Real-sandbox verification of the example itself pending CI's
+`acceptance` job re-run on PR #35 (https://github.com/vivantel/terraform-provider-paddle/pull/35)
+after the fix. Depends on: Steps 2, 4, 5 (documents features those steps
+build).
 
 1. `examples/lookup-then-act/main.tf` — a real, complete example: look up
    a subscription via `paddle_subscription` (or the new plural

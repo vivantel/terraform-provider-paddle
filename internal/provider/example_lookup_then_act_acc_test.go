@@ -40,7 +40,17 @@ func TestAccExampleLookupThenAct_appliesCleanly(t *testing.T) {
 	testAccPreCheck(t)
 	c := newTestAccClient()
 
-	canceledSub := findTestSubscription(t, c, "canceled")
+	// findCanceledTestSubscription, not findTestSubscription(t, c,
+	// "canceled") — findTestSubscription always checks
+	// PADDLE_TEST_SUBSCRIPTION_ID (the pinned *active* fixture other
+	// tests depend on staying active) first, regardless of the status
+	// argument passed in, and skips if it doesn't match; it would never
+	// find the canceled fixture this test actually needs.
+	// findCanceledTestSubscription is the dedicated helper for exactly
+	// this case — see its own comment in
+	// action_paddle_subscription_acc_test.go for why the two aren't the
+	// same function.
+	canceledSub := findCanceledTestSubscription(t, c)
 	if canceledSub == nil {
 		t.Skip("no canceled subscription found in the sandbox account (see README.md's PADDLE_TEST_CANCELED_SUBSCRIPTION_ID section) — skipping")
 	}
