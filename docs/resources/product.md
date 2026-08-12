@@ -33,12 +33,23 @@ resource "paddle_product" "example" {
 - `custom_data` (String) Arbitrary structured JSON data, e.g. `jsonencode({ internal_id = 123 })`. Compared semantically, not byte-for-byte — key ordering or whitespace differences between what you write and what Paddle echoes back won't produce a diff.
 - `description` (String)
 - `image_url` (String) Must be a publicly accessible HTTPS URL.
+- `timeouts` (Attributes) (see [below for nested schema](#nestedatt--timeouts))
 - `type` (String) `standard` or `custom`. Defaults to `standard`.
 
 ### Read-Only
 
 - `id` (String) Paddle product ID (`pro_...`).
 - `status` (String) `active` or `archived`.
+
+<a id="nestedatt--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).
+- `delete` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours). Setting a timeout for a Delete operation is only applicable if changes are saved into state before the destroy operation occurs.
+- `read` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours). Read operations occur during any refresh or planning operation when refresh is enabled.
+- `update` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).
 
 ## Import
 

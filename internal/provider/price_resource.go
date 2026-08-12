@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -55,13 +56,14 @@ type PriceResourceModel struct {
 	TaxMode      types.String       `tfsdk:"tax_mode"`
 	Status       types.String       `tfsdk:"status"`
 	CustomData   types.String       `tfsdk:"custom_data"`
+	Timeouts     timeouts.Value     `tfsdk:"timeouts"`
 }
 
 func (r *PriceResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_price"
 }
 
-func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *PriceResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A Paddle price — see https://developer.paddle.com/api-reference/prices/overview. Paddle has no hard delete for prices; `terraform destroy` archives it instead (status becomes `archived`).",
 		Attributes: map[string]schema.Attribute{
@@ -158,6 +160,12 @@ func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 			"custom_data": customDataAttribute(),
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+				Read:   true,
+				Update: true,
+				Delete: true,
+			}),
 		},
 	}
 }
@@ -285,6 +293,13 @@ func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
+	ctx, cancel, diags := resolveTimeout(ctx, plan.Timeouts, timeoutOpCreate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	created, err := r.client.CreatePrice(ctx, apiPrice)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Paddle price", client.FriendlyErrorMessage(err))
@@ -311,9 +326,17 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	// of the model wholesale below.
 	var state PriceResourceModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpRead, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	price, err := r.client.GetPrice(ctx, state.ID.ValueString())
 	if err != nil {
@@ -351,6 +374,13 @@ func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
+	ctx, cancel, diags := resolveTimeout(ctx, plan.Timeouts, timeoutOpUpdate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	updated, err := r.client.UpdatePrice(ctx, state.ID.ValueString(), apiPriceUpdate)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle price", client.FriendlyErrorMessage(err))
@@ -370,6 +400,13 @@ func (r *PriceResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpDelete, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	// A 404 means the price is already gone — successful destroy, not an
 	// error. Same tolerance Read() already has for the same status.

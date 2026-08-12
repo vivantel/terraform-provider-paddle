@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -25,16 +26,17 @@ type DiscountGroupResource struct {
 }
 
 type DiscountGroupResourceModel struct {
-	ID     types.String `tfsdk:"id"`
-	Name   types.String `tfsdk:"name"`
-	Status types.String `tfsdk:"status"`
+	ID       types.String   `tfsdk:"id"`
+	Name     types.String   `tfsdk:"name"`
+	Status   types.String   `tfsdk:"status"`
+	Timeouts timeouts.Value `tfsdk:"timeouts"`
 }
 
 func (r *DiscountGroupResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_discount_group"
 }
 
-func (r *DiscountGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *DiscountGroupResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A Paddle discount group — see https://developer.paddle.com/api-reference/discount-groups/overview. " +
 			"Groups multiple `paddle_discount`s together (via their `discount_group_id`) so their combined usage can be capped " +
@@ -55,6 +57,12 @@ func (r *DiscountGroupResource) Schema(_ context.Context, _ resource.SchemaReque
 				MarkdownDescription: "`active` or `archived`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+				Read:   true,
+				Update: true,
+				Delete: true,
+			}),
 		},
 	}
 }
@@ -84,6 +92,13 @@ func (r *DiscountGroupResource) Create(ctx context.Context, req resource.CreateR
 		return
 	}
 
+	ctx, cancel, diags := resolveTimeout(ctx, plan.Timeouts, timeoutOpCreate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	created, err := r.client.CreateDiscountGroup(ctx, toAPIDiscountGroup(plan))
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Paddle discount group", client.FriendlyErrorMessage(err))
@@ -102,9 +117,17 @@ func (r *DiscountGroupResource) Read(ctx context.Context, req resource.ReadReque
 	// rather than by accident if a future nested attribute is added.
 	var state DiscountGroupResourceModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpRead, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	group, err := r.client.GetDiscountGroup(ctx, state.ID.ValueString())
 	if err != nil {
@@ -133,6 +156,13 @@ func (r *DiscountGroupResource) Update(ctx context.Context, req resource.UpdateR
 		return
 	}
 
+	ctx, cancel, diags := resolveTimeout(ctx, plan.Timeouts, timeoutOpUpdate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	updated, err := r.client.UpdateDiscountGroup(ctx, state.ID.ValueString(), toAPIDiscountGroup(plan))
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle discount group", client.FriendlyErrorMessage(err))
@@ -149,6 +179,13 @@ func (r *DiscountGroupResource) Delete(ctx context.Context, req resource.DeleteR
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpDelete, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	// A 404 here means the group is already gone — successful destroy, not
 	// an error. Same tolerance every other resource's Delete() has for the

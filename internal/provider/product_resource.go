@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -27,21 +28,22 @@ type ProductResource struct {
 }
 
 type ProductResourceModel struct {
-	ID          types.String `tfsdk:"id"`
-	Name        types.String `tfsdk:"name"`
-	TaxCategory types.String `tfsdk:"tax_category"`
-	Description types.String `tfsdk:"description"`
-	Type        types.String `tfsdk:"type"`
-	ImageURL    types.String `tfsdk:"image_url"`
-	Status      types.String `tfsdk:"status"`
-	CustomData  types.String `tfsdk:"custom_data"`
+	ID          types.String   `tfsdk:"id"`
+	Name        types.String   `tfsdk:"name"`
+	TaxCategory types.String   `tfsdk:"tax_category"`
+	Description types.String   `tfsdk:"description"`
+	Type        types.String   `tfsdk:"type"`
+	ImageURL    types.String   `tfsdk:"image_url"`
+	Status      types.String   `tfsdk:"status"`
+	CustomData  types.String   `tfsdk:"custom_data"`
+	Timeouts    timeouts.Value `tfsdk:"timeouts"`
 }
 
 func (r *ProductResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_product"
 }
 
-func (r *ProductResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *ProductResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A Paddle product — see https://developer.paddle.com/api-reference/products/overview. Paddle has no hard delete for products; `terraform destroy` archives it instead (status becomes `archived`).",
 		Attributes: map[string]schema.Attribute{
@@ -87,6 +89,12 @@ func (r *ProductResource) Schema(_ context.Context, _ resource.SchemaRequest, re
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"custom_data": customDataAttribute(),
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+				Read:   true,
+				Update: true,
+				Delete: true,
+			}),
 		},
 	}
 }
@@ -158,6 +166,13 @@ func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
+	ctx, cancel, diags := resolveTimeout(ctx, plan.Timeouts, timeoutOpCreate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	created, err := r.client.CreateProduct(ctx, apiProduct)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Paddle product", client.FriendlyErrorMessage(err))
@@ -182,9 +197,17 @@ func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, re
 	// happens to have today.
 	var state ProductResourceModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpRead, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	product, err := r.client.GetProduct(ctx, state.ID.ValueString())
 	if err != nil {
@@ -222,6 +245,13 @@ func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 
+	ctx, cancel, diags := resolveTimeout(ctx, plan.Timeouts, timeoutOpUpdate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	updated, err := r.client.UpdateProduct(ctx, state.ID.ValueString(), apiProduct)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle product", client.FriendlyErrorMessage(err))
@@ -241,6 +271,13 @@ func (r *ProductResource) Delete(ctx context.Context, req resource.DeleteRequest
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpDelete, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	// A 404 here means the product is already gone (archived/deleted
 	// outside Terraform, or a prior partial destroy) — that's a

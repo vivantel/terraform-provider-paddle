@@ -52,11 +52,31 @@ var (
 	// Without this, a persistently *slow* (not fast-failing) backend could
 	// block a single call for minutes: up to retryMaxAttempts *
 	// defaultTimeout of request time, plus backoff, all sequential.
-	// context.WithTimeout always takes the earlier of two deadlines, so
-	// wrapping with this budget only ever tightens an already-bounded
-	// caller context — it never loosens an unbounded one beyond this.
+	// Only applied when the incoming ctx has no deadline of its own (see
+	// withDefaultTimeout) — a caller-supplied deadline (derived from a
+	// resource's timeouts{} block, see internal/provider/timeouts.go) is
+	// honored as-is, not intersected with this default. Before v0.6.0 this
+	// was applied unconditionally via context.WithTimeout, which — because
+	// context.WithTimeout always takes the earlier of two deadlines — meant
+	// a longer caller-configured timeout could never actually take effect,
+	// only ever fail faster than 60s, never wait longer. See
+	// docs/decisions/0013-configurable-timeouts-architecture.md.
 	retryOverallBudget = 60 * time.Second
 )
+
+// withDefaultTimeout applies retryOverallBudget to ctx only when ctx does
+// not already carry a deadline of its own. A resource with a configured
+// timeouts{} block derives its own deadline (see
+// internal/provider/timeouts.go) before calling into this client — that
+// deadline must be respected as-is, not tightened to 60s. Callers that
+// never set one (the sweeper, actions, any resource before v0.6.0) get
+// exactly the previous unconditional-60s behavior, unchanged.
+func withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, retryOverallBudget)
+}
 
 type Client struct {
 	BaseURL    string
@@ -165,7 +185,7 @@ func FriendlyErrorMessage(err error) string {
 // line at any level (it's set as a header directly on req, never passed
 // to a logging call).
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, retryOverallBudget)
+	ctx, cancel := withDefaultTimeout(ctx)
 	defer cancel()
 
 	bodyBytes, err := marshalBody(body)
@@ -340,7 +360,7 @@ func (e *NonRetryableError) Unwrap() error {
 // happened, nothing ambiguous about it, safe to fix and reapply like any
 // other *APIError from do().
 func (c *Client) doNoRetry(ctx context.Context, method, path string, body any, out any) error {
-	ctx, cancel := context.WithTimeout(ctx, retryOverallBudget)
+	ctx, cancel := withDefaultTimeout(ctx)
 	defer cancel()
 
 	bodyBytes, err := marshalBody(body)

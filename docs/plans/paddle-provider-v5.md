@@ -229,7 +229,60 @@ generate` clean.
 
 ## Step 2: configurable `timeouts{}` block
 
-Status: not started. Depends on: none, but should land before Step 3
+Status: done — 2026-08-12. `github.com/hashicorp/terraform-plugin-framework-timeouts`
+added via `go get` (v0.7.0). `internal/client/client.go`'s `do()`/
+`doNoRetry()` now call a new `withDefaultTimeout()` helper instead of
+unconditionally wrapping every call in `context.WithTimeout(ctx,
+retryOverallBudget)` — it only applies the 60s default when the incoming
+`ctx` has no deadline of its own, so a resource's `timeouts{}`-derived
+deadline is honored as-is (caller-wins precedence), not intersected down.
+Unit-tested directly (`internal/client/default_timeout_test.go`): no
+deadline gets the default applied, a shorter pre-set deadline survives
+unchanged, and — the actual point of the precedence fix — a *longer*
+pre-set deadline also survives unchanged rather than being tightened.
+A shared `internal/provider/timeouts.go` helper (`resolveTimeout`)
+reads the configured value via the module's own `.Create()`/`.Read()`/
+`.Update()`/`.Delete()` accessors (60s default, matching prior behavior
+exactly), clamps to the 30m ceiling
+(`docs/guardrails/configurable-timeouts-need-a-hard-ceiling.md`), and
+returns a derived context — one implementation, not five. Unit-tested
+(`internal/provider/timeouts_test.go`): unset uses the default, a value
+under the ceiling passes through, a value over the ceiling (tested with
+24h) is clamped, and an unparseable value surfaces a diagnostic. All
+five resources (`product`/`price`/`discount`/`discount_group`/
+`notification_setting`) got a `timeouts` schema attribute (`timeouts.Attributes`,
+all four ops enabled) and their `Create`/`Read`/`Update`/`Delete` wired
+to `resolveTimeout`; each `Read()` now also fetches the `timeouts`
+attribute via `GetAttribute` alongside `id` (the existing narrow-fetch
+pattern every resource's `Read()` already used), so the previously-
+applied timeout value round-trips through state correctly rather than
+being lost or produoing a schema-encoding error. A `nullTimeouts()` test
+helper was needed (and added to `internal/provider/timeouts.go`) because
+a bare `timeouts.Value{}` zero value doesn't carry the schema's attribute
+types and fails state encoding — existing test model-literal helpers
+(`baseModel()`, `baseDiscountModel()`, the inline product literal in
+`delete_not_found_test.go`) updated to use it.
+
+Mock-server verification (item 6, the one behavior that genuinely can't
+be proven against the real sandbox — see
+`docs/guardrails/mock-tests-supplement-not-replace-acceptance-tests.md`'s
+narrow exception): built as a one-off `httptest` harness here rather than
+waiting on Step 3 (Step 3 hadn't landed yet), per the plan's own
+reordering note — `internal/provider/timeout_firing_mock_test.go`,
+`TestTimeoutFiring_ConfiguredValueOverridesDefault`. A deliberately slow
+(2s) handler + a configured `300ms` delete timeout confirms the call
+actually fails around 300ms, not the old 60s default, while also proving
+the handler really would have succeeded eventually (ruling out a false
+pass from an unrelated fast failure).
+
+`go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
+`golangci-lint run ./...` all clean. `tfplugindocs generate` picked up
+the new `timeouts` attribute on all five resources automatically (only
+those five `docs/resources/*.md` files changed). Real-sandbox
+verification (all five resources' existing acceptance tests still
+passing unchanged, proving default-60s behavior preservation) pending
+CI's `acceptance` job on this step's PR — not yet confirmed as of this
+line being written. Depends on: none, but should land before Step 3
 (the mock-server harness is partly justified by this step's own
 verification need).
 

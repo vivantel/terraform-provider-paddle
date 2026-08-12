@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -31,32 +32,33 @@ type DiscountResource struct {
 }
 
 type DiscountResourceModel struct {
-	ID                        types.String `tfsdk:"id"`
-	Description               types.String `tfsdk:"description"`
-	Type                      types.String `tfsdk:"type"`
-	Amount                    types.String `tfsdk:"amount"`
-	Code                      types.String `tfsdk:"code"`
-	EnabledForCheckout        types.Bool   `tfsdk:"enabled_for_checkout"`
-	Mode                      types.String `tfsdk:"mode"`
-	CurrencyCode              types.String `tfsdk:"currency_code"`
-	Recur                     types.Bool   `tfsdk:"recur"`
-	MaximumRecurringIntervals types.Int64  `tfsdk:"maximum_recurring_intervals"`
-	UsageLimit                types.Int64  `tfsdk:"usage_limit"`
-	RestrictTo                types.List   `tfsdk:"restrict_to"`
-	ExpiresAt                 types.String `tfsdk:"expires_at"`
-	DiscountGroupID           types.String `tfsdk:"discount_group_id"`
-	Status                    types.String `tfsdk:"status"`
-	TimesUsed                 types.Int64  `tfsdk:"times_used"`
-	CreatedAt                 types.String `tfsdk:"created_at"`
-	UpdatedAt                 types.String `tfsdk:"updated_at"`
-	CustomData                types.String `tfsdk:"custom_data"`
+	ID                        types.String   `tfsdk:"id"`
+	Description               types.String   `tfsdk:"description"`
+	Type                      types.String   `tfsdk:"type"`
+	Amount                    types.String   `tfsdk:"amount"`
+	Code                      types.String   `tfsdk:"code"`
+	EnabledForCheckout        types.Bool     `tfsdk:"enabled_for_checkout"`
+	Mode                      types.String   `tfsdk:"mode"`
+	CurrencyCode              types.String   `tfsdk:"currency_code"`
+	Recur                     types.Bool     `tfsdk:"recur"`
+	MaximumRecurringIntervals types.Int64    `tfsdk:"maximum_recurring_intervals"`
+	UsageLimit                types.Int64    `tfsdk:"usage_limit"`
+	RestrictTo                types.List     `tfsdk:"restrict_to"`
+	ExpiresAt                 types.String   `tfsdk:"expires_at"`
+	DiscountGroupID           types.String   `tfsdk:"discount_group_id"`
+	Status                    types.String   `tfsdk:"status"`
+	TimesUsed                 types.Int64    `tfsdk:"times_used"`
+	CreatedAt                 types.String   `tfsdk:"created_at"`
+	UpdatedAt                 types.String   `tfsdk:"updated_at"`
+	CustomData                types.String   `tfsdk:"custom_data"`
+	Timeouts                  timeouts.Value `tfsdk:"timeouts"`
 }
 
 func (r *DiscountResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_discount"
 }
 
-func (r *DiscountResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *DiscountResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A Paddle discount — see https://developer.paddle.com/api-reference/discounts/overview. " +
 			"Paddle has no delete operation for discounts at all; `terraform destroy` sets `status = \"archived\"` " +
@@ -161,6 +163,12 @@ func (r *DiscountResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				MarkdownDescription: "RFC 3339 date-time this discount was last updated, set by Paddle. Deliberately has no UseStateForUnknown — it genuinely changes on every update, so it should show as \"known after apply\" whenever anything else changes.",
 			},
 			"custom_data": customDataAttribute(),
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+				Read:   true,
+				Update: true,
+				Delete: true,
+			}),
 		},
 	}
 }
@@ -321,6 +329,14 @@ func (r *DiscountResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
+	var cancel context.CancelFunc
+	ctx, cancel, diags = resolveTimeout(ctx, plan.Timeouts, timeoutOpCreate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	created, err := r.client.CreateDiscount(ctx, apiDiscount)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Paddle discount", client.FriendlyErrorMessage(err))
@@ -343,9 +359,17 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 	// by accident if a future nested attribute is added.
 	var state DiscountResourceModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpRead, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	discount, err := r.client.GetDiscount(ctx, state.ID.ValueString())
 	if err != nil {
@@ -383,6 +407,14 @@ func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateReques
 		return
 	}
 
+	var cancel context.CancelFunc
+	ctx, cancel, diags = resolveTimeout(ctx, plan.Timeouts, timeoutOpUpdate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	updated, err := r.client.UpdateDiscount(ctx, state.ID.ValueString(), apiDiscount)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle discount", client.FriendlyErrorMessage(err))
@@ -402,6 +434,13 @@ func (r *DiscountResource) Delete(ctx context.Context, req resource.DeleteReques
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpDelete, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	// A 404 means the discount is already gone — successful destroy, not
 	// an error. Same tolerance Read() already has for the same status.

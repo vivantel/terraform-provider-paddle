@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -31,23 +32,24 @@ type NotificationSettingResource struct {
 }
 
 type NotificationSettingResourceModel struct {
-	ID                     types.String `tfsdk:"id"`
-	Description            types.String `tfsdk:"description"`
-	Type                   types.String `tfsdk:"type"`
-	Destination            types.String `tfsdk:"destination"`
-	Active                 types.Bool   `tfsdk:"active"`
-	SubscribedEvents       types.List   `tfsdk:"subscribed_events"`
-	APIVersion             types.Int64  `tfsdk:"api_version"`
-	IncludeSensitiveFields types.Bool   `tfsdk:"include_sensitive_fields"`
-	TrafficSource          types.String `tfsdk:"traffic_source"`
-	EndpointSecretKey      types.String `tfsdk:"endpoint_secret_key"`
+	ID                     types.String   `tfsdk:"id"`
+	Description            types.String   `tfsdk:"description"`
+	Type                   types.String   `tfsdk:"type"`
+	Destination            types.String   `tfsdk:"destination"`
+	Active                 types.Bool     `tfsdk:"active"`
+	SubscribedEvents       types.List     `tfsdk:"subscribed_events"`
+	APIVersion             types.Int64    `tfsdk:"api_version"`
+	IncludeSensitiveFields types.Bool     `tfsdk:"include_sensitive_fields"`
+	TrafficSource          types.String   `tfsdk:"traffic_source"`
+	EndpointSecretKey      types.String   `tfsdk:"endpoint_secret_key"`
+	Timeouts               timeouts.Value `tfsdk:"timeouts"`
 }
 
 func (r *NotificationSettingResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_notification_setting"
 }
 
-func (r *NotificationSettingResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *NotificationSettingResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A Paddle notification setting (a webhook or email destination) — see " +
 			"https://developer.paddle.com/api-reference/notification-settings/overview. Unlike " +
@@ -121,6 +123,12 @@ func (r *NotificationSettingResource) Schema(_ context.Context, _ resource.Schem
 				MarkdownDescription: "Secret key Paddle uses to sign webhook payloads sent to this destination.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+				Read:   true,
+				Update: true,
+				Delete: true,
+			}),
 		},
 	}
 }
@@ -250,6 +258,14 @@ func (r *NotificationSettingResource) Create(ctx context.Context, req resource.C
 		return
 	}
 
+	var cancel context.CancelFunc
+	ctx, cancel, diags = resolveTimeout(ctx, plan.Timeouts, timeoutOpCreate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	created, err := r.client.CreateNotificationSetting(ctx, createBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error creating Paddle notification setting", client.FriendlyErrorMessage(err))
@@ -301,9 +317,17 @@ func (r *NotificationSettingResource) Read(ctx context.Context, req resource.Rea
 	// resource's Read() in this provider.
 	var state NotificationSettingResourceModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpRead, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	ns, err := r.client.GetNotificationSetting(ctx, state.ID.ValueString())
 	if err != nil {
@@ -341,6 +365,14 @@ func (r *NotificationSettingResource) Update(ctx context.Context, req resource.U
 		return
 	}
 
+	var cancel context.CancelFunc
+	ctx, cancel, diags = resolveTimeout(ctx, plan.Timeouts, timeoutOpUpdate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
+
 	updated, err := r.client.UpdateNotificationSetting(ctx, state.ID.ValueString(), updateBody)
 	if err != nil {
 		resp.Diagnostics.AddError("Error updating Paddle notification setting", client.FriendlyErrorMessage(err))
@@ -360,6 +392,13 @@ func (r *NotificationSettingResource) Delete(ctx context.Context, req resource.D
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpDelete, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	// A real hard DELETE, not archive-via-update (see
 	// client.DeleteNotificationSetting's comment). A 404 means it's already

@@ -51,6 +51,7 @@ func TestProductDelete_TreatsAlreadyGone404AsSuccess(t *testing.T) {
 		ID:          types.StringValue("pro_gone"),
 		Name:        types.StringValue("x"),
 		TaxCategory: types.StringValue("standard"),
+		Timeouts:    nullTimeouts(),
 	})
 
 	var resp resource.DeleteResponse

@@ -45,6 +45,7 @@ resource "paddle_discount" "launch_promo" {
 - `mode` (String) `standard` or `custom`. Defaults to `standard`.
 - `recur` (Boolean) Whether the discount applies to every billing period of a recurring price, not just the first. Defaults to `false`.
 - `restrict_to` (List of String) Product or price IDs this discount is restricted to. Omit (or set null) to apply to the whole catalog.
+- `timeouts` (Attributes) (see [below for nested schema](#nestedatt--timeouts))
 - `usage_limit` (Number) Minimum 1. Omit (or set null) for unlimited redemptions.
 
 ### Read-Only
@@ -54,6 +55,16 @@ resource "paddle_discount" "launch_promo" {
 - `status` (String) `active` or `archived`.
 - `times_used` (Number) Number of times this discount has been redeemed. Paddle-assigned; not settable, and can drift between plans as it's used outside Terraform.
 - `updated_at` (String) RFC 3339 date-time this discount was last updated, set by Paddle. Deliberately has no UseStateForUnknown — it genuinely changes on every update, so it should show as "known after apply" whenever anything else changes.
+
+<a id="nestedatt--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).
+- `delete` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours). Setting a timeout for a Delete operation is only applicable if changes are saved into state before the destroy operation occurs.
+- `read` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours). Read operations occur during any refresh or planning operation when refresh is enabled.
+- `update` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).
 
 ## Import
 

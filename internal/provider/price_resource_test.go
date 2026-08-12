@@ -18,6 +18,7 @@ func baseModel() PriceResourceModel {
 			Amount:       types.StringValue("1000"),
 			CurrencyCode: types.StringValue("USD"),
 		},
+		Timeouts: nullTimeouts(),
 	}
 }
 
