@@ -70,7 +70,10 @@ sensitive data.
   0010's fuller deferral ever be revisited).
 - `paddle_events` (v5) — its `data` field, not a dedicated PII attribute,
   see above.
-- `paddle_customers` (v5, plural) — compounds the concern, see above.
+- `paddle_customers` (v5, plural, shipped `docs/plans/paddle-provider-v5.md`
+  Step 4) — compounds the concern, see above; its schema
+  `MarkdownDescription` and `internal/provider/customers_data_source.go`
+  carry the "multiple customers' PII" wording this section calls for.
 - `internal/provider/*_data_source.go` schema `MarkdownDescription` text.
 - `README.md`.
 - The v5 full-audit pass

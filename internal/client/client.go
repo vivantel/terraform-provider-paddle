@@ -1647,6 +1647,63 @@ func (c *Client) ListCustomersByEmail(ctx context.Context, email string) ([]Cust
 	}
 }
 
+// CustomerListFilter holds ListCustomersFiltered's optional server-side
+// filters — email (exact-match, comma-separated, same semantics
+// ListCustomersByEmail's comment above already confirmed) and status,
+// both confirmed real support against the real API reference, 2026-08-12,
+// while scoping docs/decisions/0012-v5-scope-pii-data-sources-timeouts-testing.md
+// item 3 — checked specifically rather than assumed to mirror
+// SubscriptionListFilter/TransactionListFilter/NotificationListFilter's
+// shape just because they're adjacent in this file.
+type CustomerListFilter struct {
+	Email  string
+	Status string
+	// Limit — see TransactionListFilter.Limit's comment; same purpose,
+	// same default (0 = unlimited). Used by
+	// paddle_customers_data_source.go's plural listing (Limit: 0, this
+	// data source's whole point is returning everything matching its
+	// filters) — unlike every ListXFiltered method above, no data source
+	// in this provider needs this method's "cheaply detect 0/1/many
+	// matches" shape, since paddle_customer (singular) still uses
+	// ListCustomersByEmail directly.
+	Limit int
+}
+
+// ListCustomersFiltered is paddle_customers_data_source.go's (plural)
+// lookup-by-filter backend — a second, more general method alongside the
+// existing single-purpose ListCustomersByEmail rather than changing that
+// one's behavior or signature, since paddle_customer (singular) already
+// depends on its exact shape.
+func (c *Client) ListCustomersFiltered(ctx context.Context, filter CustomerListFilter) ([]Customer, error) {
+	perPage := 200
+	if filter.Limit > 0 && filter.Limit < perPage {
+		perPage = filter.Limit
+	}
+	var all []Customer
+	after := ""
+	for {
+		path := fmt.Sprintf("/customers?per_page=%d", perPage)
+		if filter.Email != "" {
+			path += "&email=" + url.QueryEscape(filter.Email)
+		}
+		if filter.Status != "" {
+			path += "&status=" + url.QueryEscape(filter.Status)
+		}
+		if after != "" {
+			path += "&after=" + url.QueryEscape(after)
+		}
+		var env customerListEnvelope
+		if err := c.do(ctx, http.MethodGet, path, nil, &env); err != nil {
+			return nil, err
+		}
+		all = append(all, env.Data...)
+		if len(env.Data) == 0 || !env.Meta.Pagination.HasMore || reachedLimit(len(all), filter.Limit) {
+			return all, nil
+		}
+		after = env.Data[len(env.Data)-1].ID
+	}
+}
+
 type Address struct {
 	ID          string `json:"id,omitempty"`
 	CountryCode string `json:"country_code"`
