@@ -303,11 +303,12 @@ passed clean the whole time this bug was present.
 `golangci-lint run ./...` all clean after the fix. `tfplugindocs
 generate` diff unchanged (still only the five `docs/resources/*.md`
 files — confirms data source docs are unaffected, as expected).
-Real-sandbox verification (all five resources' existing acceptance tests,
-including the singular data sources, passing unchanged — proving both
-default-60s behavior preservation and the post-review fix) pending CI's
-`acceptance` job on this step's PR's next run — not yet confirmed as of
-this line being written. Depends on: none, but should land before Step 3
+Real-sandbox verification confirmed via CI's `acceptance` job on PR #31's
+second run (https://github.com/vivantel/terraform-provider-paddle/pull/31)
+— `build`/`docs`/`lint`/`acceptance` all pass, including every one of the
+five resources' existing acceptance tests and the previously-broken
+singular data sources, proving both default-60s behavior preservation and
+the post-review fix. Depends on: none, but should land before Step 3
 (the mock-server harness is partly justified by this step's own
 verification need).
 
