@@ -119,15 +119,18 @@ func isAccTestCustomerEmail(email string) bool {
 // even try CancelTransaction before falling back to credit/refund — false
 // only for "completed", the one status a cancel attempt is *guaranteed*
 // to be rejected for (a paid transaction can only be refunded/credited,
-// never canceled outright). Found the hard way, 2026-08-11: sweeping a
-// real backlog of leaked subscription-charge transactions (always
-// "completed" — see the comment below), every single Cancel attempt
-// against one still went through the client's full retry-with-backoff
-// path before falling through to the working credit/refund path, roughly
-// doubling this sweeper's real-world runtime under Paddle's rate
-// limiting for no benefit — an outcome already known in advance from the
-// status alone. Every other status still attempts Cancel first,
-// unchanged: cancel-then-fall-back-to-credit remains the right shape for
+// never canceled outright). Motivated by a real sweep run, 2026-08-11,
+// against a leaked *completed* transaction from an earlier test run: the
+// doomed Cancel attempt still went through the client's full
+// retry-with-backoff path before falling through to the working
+// credit/refund path, wasting time for no benefit — an outcome already
+// known in advance from the status alone. **Correction, 2026-08-12**: a
+// *different* real backlog (the same day, a different batch) turned out
+// to be "billed", not "completed" — don't assume every leaked
+// subscription-charge transaction is "completed"; this function only
+// special-cases the one status where skipping Cancel is actually safe.
+// Every other status still attempts Cancel first, unchanged:
+// cancel-then-fall-back-to-credit remains the right shape for
 // draft/ready/billed/past_due, where whether Cancel will succeed isn't
 // knowable without asking Paddle.
 func shouldAttemptCancel(status string) bool {
@@ -136,22 +139,41 @@ func shouldAttemptCancel(status string) bool {
 
 func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txn client.Transaction) error {
 	if shouldAttemptCancel(txn.Status) {
-		if err := c.CancelTransaction(ctx, txn.ID); err == nil || client.IsNotFound(err) {
+		cancelErr := c.CancelTransaction(ctx, txn.ID)
+		if cancelErr == nil || client.IsNotFound(cancelErr) {
 			return nil
+		}
+		// A timed-out Cancel (retryOverallBudget exhausted without ever
+		// getting an inspectable response — client.IsTimeout) is a
+		// strong signal the GetTransaction fallback below will hit the
+		// same wall, not a reason to try it anyway — found the hard way,
+		// 2026-08-11/12: a real sweep run showed exactly this, a timed-out
+		// Cancel followed by an equally timed-out GetTransaction, roughly
+		// doubling real-world time spent on a transaction that was never
+		// going to succeed either way within that run. Any other Cancel
+		// failure (a real, fast rejection — e.g. the transaction is past
+		// the cancelable draft/ready/billed states) still falls through
+		// to the credit/refund path below as before.
+		if client.IsTimeout(cancelErr) {
+			return fmt.Errorf("cancel timed out, not attempting the credit/refund fallback (likely doomed the same way): %w", cancelErr)
 		}
 	}
 	// Falls through here either because Cancel was skipped (status ==
 	// "completed", see shouldAttemptCancel) or because it was attempted
-	// and failed — most likely because the transaction is past the
-	// cancelable draft/ready/billed states. Paddle's adjustment action
-	// must match the transaction's actual status: "refund" for a paid
-	// (completed) transaction, "credit" for an unpaid one (billed/
+	// and failed with a real, fast rejection (not a timeout — see above;
+	// for a "billed" transaction this is the normal, expected path when
+	// Cancel is rejected for some other reason). Paddle's adjustment
+	// action must match the transaction's actual status: "refund" for a
+	// paid (completed) transaction, "credit" for an unpaid one (billed/
 	// past_due) — found the hard way, 2026-08-11: this sweeper originally
-	// hardcoded "credit" unconditionally, and Paddle rejected it for
-	// every one of these (real-world) subscription-charge transactions,
-	// which are auto-collected and therefore "completed" (paid) by the
-	// time this sweeper runs, not "billed" — "credit" doesn't apply to an
-	// already-paid transaction.
+	// hardcoded "credit" unconditionally, and Paddle rejected it for a
+	// completed transaction, which needs "refund" instead. **Correction,
+	// 2026-08-12**: the comment here previously claimed subscription-charge
+	// transactions are always "completed" by the time this sweeper runs —
+	// a real sweep run's diagnostic logging (see the WARN line in
+	// sweepTestSubscriptionCharges) showed a real leaked batch was
+	// actually "billed", not "completed". Don't assume either status
+	// without checking; this branch handles both correctly regardless.
 	action := "credit"
 	if txn.Status == "completed" {
 		action = "refund"
