@@ -24,6 +24,29 @@ to state exactly as durably as a resource does; the only difference is
 that a resource's write happens once at apply-time and a data source's
 happens on every refresh.
 
+**PII doesn't only mean a dedicated field.** `paddle_events`' `data`
+attribute is arbitrary, per-event-type JSON that can carry customer PII
+just as directly as a dedicated `email`/`name` field would (a
+`customer.created` event's payload *is* a customer record) — this
+guardrail applies to a data source whose output *can* carry PII, not
+only one whose schema names a PII field explicitly. When a data source's
+output is opaque/variable-shape like this, redacting it reliably isn't
+generally possible (the shape varies per event type, arbitrarily) — the
+same documentation-as-mitigation treatment applies instead, not a
+technical filter.
+
+**Plural/list variants compound this, not just repeat it.** A data
+source returning many records at once (e.g. `paddle_customers`) puts
+*more* PII into state per use than its singular counterpart, and deserves
+the same warning stated in those terms — "this returns multiple
+customers' PII," not a copy-pasted singular-lookup sentence.
+
+Also check `Sensitive: true` schema marking while auditing for this — a
+related but distinct protection (hides a value from CLI/log output; does
+*not* stop it writing to state). A PII-bearing attribute missing
+`Sensitive: true` is worth fixing alongside the state-file warning, even
+though closing that gap doesn't substitute for the warning itself.
+
 ## Why
 
 Derived from [[0011-v4-scope-data-sources-and-regression-guard]] item 4
@@ -45,10 +68,18 @@ sensitive data.
 - `paddle_customer` (v4) and any future data source exposing customer
   PII (a hypothetical `paddle_address`, `paddle_business`, etc., should
   0010's fuller deferral ever be revisited).
+- `paddle_events` (v5) — its `data` field, not a dedicated PII attribute,
+  see above.
+- `paddle_customers` (v5, plural) — compounds the concern, see above.
 - `internal/provider/*_data_source.go` schema `MarkdownDescription` text.
 - `README.md`.
+- The v5 full-audit pass
+  ([[0012-v5-scope-pii-data-sources-timeouts-testing]] item 1) checking
+  every existing resource/data source/action schema for any other
+  overlooked PII vector and any missing `Sensitive: true` marking.
 
 ## Related
 
 - [[0010-v3-scope-lifecycle-actions]]
 - [[0011-v4-scope-data-sources-and-regression-guard]]
+- [[0012-v5-scope-pii-data-sources-timeouts-testing]]
