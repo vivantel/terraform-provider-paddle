@@ -746,10 +746,27 @@ v4 commit, unrelated to this PR's diff; left as a separate, real,
 pre-existing issue for a future session rather than fixed here (out of
 Step 6's scope).
 
-Real-sandbox verification of the example itself pending CI's
-`acceptance` job re-run on PR #35 (https://github.com/vivantel/terraform-provider-paddle/pull/35)
-after the fix. Depends on: Steps 2, 4, 5 (documents features those steps
-build).
+The next CI run surfaced a second, more interesting real bug — this time
+in the example's actual HCL, not the test: Paddle rejected the credit
+config with `action = "refund"` + `type = "full"` + an item-level
+`items` array outright — `"items are not allowed when the adjustment
+type is full"`. Confirmed against the real sandbox that `action =
+"credit"` accepts the identical `type = "full"` + `items` shape fine
+(the same combination `TestAccPaddleAdjustment_basic` and
+`TestAccPaddleTransactionDataSource_feedsAdjustment` already use, both
+passing) — `refund` and `credit` have different validation rules for
+this combination, a real Paddle API nuance neither this plan nor
+`paddle_adjustment`'s own schema description called out before now.
+Fixed by switching the example to `action = "credit"`, documented
+in-line in the `.tf` file itself so a future reader doesn't hit the same
+surprise. A whole-transaction `refund` with no `items` (README's own
+basic Actions example) still works fine — this specific combination
+(item-level + `refund`) is what's actually disallowed.
+
+Real-sandbox verification of the example pending CI's `acceptance` job
+re-run on PR #35 (https://github.com/vivantel/terraform-provider-paddle/pull/35)
+after both fixes. Depends on: Steps 2, 4, 5 (documents features those
+steps build).
 
 1. `examples/lookup-then-act/main.tf` — a real, complete example: look up
    a subscription via `paddle_subscription` (or the new plural

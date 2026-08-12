@@ -61,6 +61,16 @@ resource "terraform_data" "cancel_trigger" {
 # item_id straight into paddle_adjustment — item_id lives three JSON
 # shapes deep in Paddle's raw API (see internal/client/lineitem.go's doc
 # comment); paddle_transaction surfaces it directly.
+#
+# action = "credit", not "refund" — confirmed against the real sandbox
+# (2026-08-12): Paddle rejects an item-level `items` array outright
+# ("items are not allowed when the adjustment type is full") once
+# `action = "refund"` and `type = "full"` are combined, but accepts the
+# identical shape for `action = "credit"`. A whole-transaction, no-items
+# refund (README.md's own basic Actions example) works fine; this
+# example specifically demonstrates line_items[0].item_id feeding into
+# an item-level adjustment, so credit is the combination that actually
+# lets it do that.
 
 data "paddle_transaction" "refund_target" {
   id = "txn_..." # replace with a real transaction ID
@@ -68,7 +78,7 @@ data "paddle_transaction" "refund_target" {
 
 action "paddle_adjustment" "refund_line_item" {
   config {
-    action         = "refund"
+    action         = "credit"
     type           = "full"
     transaction_id = data.paddle_transaction.refund_target.id
     reason         = "Customer requested refund"
