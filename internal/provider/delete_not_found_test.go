@@ -47,10 +47,13 @@ func TestProductDelete_TreatsAlreadyGone404AsSuccess(t *testing.T) {
 	defer srv.Close()
 
 	pr := &ProductResource{client: client.New(srv.URL, "test-key")}
-	req := testDeleteState(t, pr, ProductResourceModel{
-		ID:          types.StringValue("pro_gone"),
-		Name:        types.StringValue("x"),
-		TaxCategory: types.StringValue("standard"),
+	req := testDeleteState(t, pr, productResourceStateModel{
+		ProductResourceModel: ProductResourceModel{
+			ID:          types.StringValue("pro_gone"),
+			Name:        types.StringValue("x"),
+			TaxCategory: types.StringValue("standard"),
+		},
+		Timeouts: nullTimeouts(),
 	})
 
 	var resp resource.DeleteResponse
@@ -71,7 +74,7 @@ func TestPriceDelete_TreatsAlreadyGone404AsSuccess(t *testing.T) {
 	pr := &PriceResource{client: client.New(srv.URL, "test-key")}
 	m := baseModel()
 	m.ID = types.StringValue("pri_gone")
-	req := testDeleteState(t, pr, m)
+	req := testDeleteState(t, pr, priceResourceStateModel{PriceResourceModel: m, Timeouts: nullTimeouts()})
 
 	var resp resource.DeleteResponse
 	pr.Delete(context.Background(), req, &resp)
@@ -91,7 +94,7 @@ func TestDiscountDelete_TreatsAlreadyGone404AsSuccess(t *testing.T) {
 	dr := &DiscountResource{client: client.New(srv.URL, "test-key")}
 	m := baseDiscountModel()
 	m.ID = types.StringValue("dsc_gone")
-	req := testDeleteState(t, dr, m)
+	req := testDeleteState(t, dr, discountResourceStateModel{DiscountResourceModel: m, Timeouts: nullTimeouts()})
 
 	var resp resource.DeleteResponse
 	dr.Delete(context.Background(), req, &resp)

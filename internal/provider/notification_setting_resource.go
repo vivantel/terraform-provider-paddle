@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -43,11 +44,22 @@ type NotificationSettingResourceModel struct {
 	EndpointSecretKey      types.String `tfsdk:"endpoint_secret_key"`
 }
 
+// notificationSettingResourceStateModel is what Create/Read/Update/Delete
+// decode Plan/State into — see productResourceStateModel's comment in
+// product_resource.go for why this wrapper exists instead of a Timeouts
+// field directly on NotificationSettingResourceModel
+// (notification_setting_data_source.go decodes state into that exact type
+// too, and its schema has no "timeouts" attribute).
+type notificationSettingResourceStateModel struct {
+	NotificationSettingResourceModel
+	Timeouts timeouts.Value `tfsdk:"timeouts"`
+}
+
 func (r *NotificationSettingResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_notification_setting"
 }
 
-func (r *NotificationSettingResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *NotificationSettingResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A Paddle notification setting (a webhook or email destination) — see " +
 			"https://developer.paddle.com/api-reference/notification-settings/overview. Unlike " +
@@ -121,6 +133,12 @@ func (r *NotificationSettingResource) Schema(_ context.Context, _ resource.Schem
 				MarkdownDescription: "Secret key Paddle uses to sign webhook payloads sent to this destination.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+				Read:   true,
+				Update: true,
+				Delete: true,
+			}),
 		},
 	}
 }
@@ -238,17 +256,25 @@ func fromAPINotificationSetting(ctx context.Context, ns client.NotificationSetti
 }
 
 func (r *NotificationSettingResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan NotificationSettingResourceModel
+	var plan notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	createBody, diags := toAPINotificationSettingCreate(ctx, plan)
+	createBody, diags := toAPINotificationSettingCreate(ctx, plan.NotificationSettingResourceModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	var cancel context.CancelFunc
+	ctx, cancel, diags = resolveTimeout(ctx, plan.Timeouts, timeoutOpCreate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	created, err := r.client.CreateNotificationSetting(ctx, createBody)
 	if err != nil {
@@ -275,7 +301,7 @@ func (r *NotificationSettingResource) Create(ctx context.Context, req resource.C
 		created = updated
 	}
 
-	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *created, &plan)...)
+	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *created, &plan.NotificationSettingResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -299,11 +325,19 @@ func eventNamesOf(ns *client.NotificationSetting) []string {
 func (r *NotificationSettingResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	// Fetch just id, not the whole model — same reasoning as every other
 	// resource's Read() in this provider.
-	var state NotificationSettingResourceModel
+	var state notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpRead, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	ns, err := r.client.GetNotificationSetting(ctx, state.ID.ValueString())
 	if err != nil {
@@ -315,7 +349,7 @@ func (r *NotificationSettingResource) Read(ctx context.Context, req resource.Rea
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *ns, &state)...)
+	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *ns, &state.NotificationSettingResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -323,23 +357,31 @@ func (r *NotificationSettingResource) Read(ctx context.Context, req resource.Rea
 }
 
 func (r *NotificationSettingResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan NotificationSettingResourceModel
+	var plan notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var state NotificationSettingResourceModel
+	var state notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	updateBody, diags := toAPINotificationSettingUpdate(ctx, plan)
+	updateBody, diags := toAPINotificationSettingUpdate(ctx, plan.NotificationSettingResourceModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	var cancel context.CancelFunc
+	ctx, cancel, diags = resolveTimeout(ctx, plan.Timeouts, timeoutOpUpdate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	updated, err := r.client.UpdateNotificationSetting(ctx, state.ID.ValueString(), updateBody)
 	if err != nil {
@@ -347,7 +389,7 @@ func (r *NotificationSettingResource) Update(ctx context.Context, req resource.U
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *updated, &plan)...)
+	resp.Diagnostics.Append(fromAPINotificationSetting(ctx, *updated, &plan.NotificationSettingResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -355,11 +397,18 @@ func (r *NotificationSettingResource) Update(ctx context.Context, req resource.U
 }
 
 func (r *NotificationSettingResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state NotificationSettingResourceModel
+	var state notificationSettingResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpDelete, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	// A real hard DELETE, not archive-via-update (see
 	// client.DeleteNotificationSetting's comment). A 404 means it's already

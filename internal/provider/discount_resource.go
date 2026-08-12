@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -52,11 +53,22 @@ type DiscountResourceModel struct {
 	CustomData                types.String `tfsdk:"custom_data"`
 }
 
+// discountResourceStateModel is what Create/Read/Update/Delete decode
+// Plan/State into — see productResourceStateModel's comment in
+// product_resource.go for why this wrapper exists instead of a Timeouts
+// field directly on DiscountResourceModel (discount_data_source.go decodes
+// state into that exact type too, and its schema has no "timeouts"
+// attribute).
+type discountResourceStateModel struct {
+	DiscountResourceModel
+	Timeouts timeouts.Value `tfsdk:"timeouts"`
+}
+
 func (r *DiscountResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_discount"
 }
 
-func (r *DiscountResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *DiscountResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A Paddle discount — see https://developer.paddle.com/api-reference/discounts/overview. " +
 			"Paddle has no delete operation for discounts at all; `terraform destroy` sets `status = \"archived\"` " +
@@ -161,6 +173,12 @@ func (r *DiscountResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				MarkdownDescription: "RFC 3339 date-time this discount was last updated, set by Paddle. Deliberately has no UseStateForUnknown — it genuinely changes on every update, so it should show as \"known after apply\" whenever anything else changes.",
 			},
 			"custom_data": customDataAttribute(),
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+				Read:   true,
+				Update: true,
+				Delete: true,
+			}),
 		},
 	}
 }
@@ -309,17 +327,25 @@ func fromAPIDiscount(ctx context.Context, d client.Discount, m *DiscountResource
 }
 
 func (r *DiscountResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan DiscountResourceModel
+	var plan discountResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	apiDiscount, diags := toAPIDiscount(ctx, plan)
+	apiDiscount, diags := toAPIDiscount(ctx, plan.DiscountResourceModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	var cancel context.CancelFunc
+	ctx, cancel, diags = resolveTimeout(ctx, plan.Timeouts, timeoutOpCreate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	created, err := r.client.CreateDiscount(ctx, apiDiscount)
 	if err != nil {
@@ -327,7 +353,7 @@ func (r *DiscountResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPIDiscount(ctx, *created, &plan)...)
+	resp.Diagnostics.Append(fromAPIDiscount(ctx, *created, &plan.DiscountResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -341,11 +367,19 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 	// wouldn't actually crash right now, but using the same narrow-fetch
 	// pattern here keeps this resource correct by construction rather than
 	// by accident if a future nested attribute is added.
-	var state DiscountResourceModel
+	var state discountResourceStateModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpRead, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	discount, err := r.client.GetDiscount(ctx, state.ID.ValueString())
 	if err != nil {
@@ -357,7 +391,7 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPIDiscount(ctx, *discount, &state)...)
+	resp.Diagnostics.Append(fromAPIDiscount(ctx, *discount, &state.DiscountResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -365,23 +399,31 @@ func (r *DiscountResource) Read(ctx context.Context, req resource.ReadRequest, r
 }
 
 func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan DiscountResourceModel
+	var plan discountResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var state DiscountResourceModel
+	var state discountResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	apiDiscount, diags := toAPIDiscount(ctx, plan)
+	apiDiscount, diags := toAPIDiscount(ctx, plan.DiscountResourceModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	var cancel context.CancelFunc
+	ctx, cancel, diags = resolveTimeout(ctx, plan.Timeouts, timeoutOpUpdate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	updated, err := r.client.UpdateDiscount(ctx, state.ID.ValueString(), apiDiscount)
 	if err != nil {
@@ -389,7 +431,7 @@ func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateReques
 		return
 	}
 
-	resp.Diagnostics.Append(fromAPIDiscount(ctx, *updated, &plan)...)
+	resp.Diagnostics.Append(fromAPIDiscount(ctx, *updated, &plan.DiscountResourceModel)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -397,11 +439,18 @@ func (r *DiscountResource) Update(ctx context.Context, req resource.UpdateReques
 }
 
 func (r *DiscountResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state DiscountResourceModel
+	var state discountResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpDelete, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	// A 404 means the discount is already gone — successful destroy, not
 	// an error. Same tolerance Read() already has for the same status.

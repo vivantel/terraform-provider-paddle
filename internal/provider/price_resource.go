@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -44,6 +45,10 @@ type quantityModel struct {
 	Maximum types.Int64 `tfsdk:"maximum"`
 }
 
+// PriceResourceModel is deliberately timeouts-free — see
+// ProductResourceModel's comment in product_resource.go for why:
+// price_data_source.go decodes state into this exact type too, and its
+// schema has no "timeouts" attribute.
 type PriceResourceModel struct {
 	ID           types.String       `tfsdk:"id"`
 	ProductID    types.String       `tfsdk:"product_id"`
@@ -57,11 +62,20 @@ type PriceResourceModel struct {
 	CustomData   types.String       `tfsdk:"custom_data"`
 }
 
+// priceResourceStateModel is what Create/Read/Update/Delete decode
+// Plan/State into — see productResourceStateModel's comment in
+// product_resource.go for why this wrapper exists instead of a Timeouts
+// field directly on PriceResourceModel.
+type priceResourceStateModel struct {
+	PriceResourceModel
+	Timeouts timeouts.Value `tfsdk:"timeouts"`
+}
+
 func (r *PriceResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_price"
 }
 
-func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *PriceResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "A Paddle price — see https://developer.paddle.com/api-reference/prices/overview. Paddle has no hard delete for prices; `terraform destroy` archives it instead (status becomes `archived`).",
 		Attributes: map[string]schema.Attribute{
@@ -158,6 +172,12 @@ func (r *PriceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 				},
 			},
 			"custom_data": customDataAttribute(),
+			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
+				Create: true,
+				Read:   true,
+				Update: true,
+				Delete: true,
+			}),
 		},
 	}
 }
@@ -273,17 +293,24 @@ func fromAPIPrice(p client.Price, m *PriceResourceModel) error {
 }
 
 func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan PriceResourceModel
+	var plan priceResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	apiPrice, err := toAPIPrice(plan)
+	apiPrice, err := toAPIPrice(plan.PriceResourceModel)
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, plan.Timeouts, timeoutOpCreate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	created, err := r.client.CreatePrice(ctx, apiPrice)
 	if err != nil {
@@ -291,7 +318,7 @@ func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
-	if err := fromAPIPrice(*created, &plan); err != nil {
+	if err := fromAPIPrice(*created, &plan.PriceResourceModel); err != nil {
 		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
 		return
 	}
@@ -309,11 +336,19 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	// Error: target type cannot handle null values, Path: unit_price".
 	// id is all this method needs before fromAPIPrice overwrites the rest
 	// of the model wholesale below.
-	var state PriceResourceModel
+	var state priceResourceStateModel
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("id"), &state.ID)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("timeouts"), &state.Timeouts)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpRead, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	price, err := r.client.GetPrice(ctx, state.ID.ValueString())
 	if err != nil {
@@ -325,7 +360,7 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 
-	if err := fromAPIPrice(*price, &state); err != nil {
+	if err := fromAPIPrice(*price, &state.PriceResourceModel); err != nil {
 		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
 		return
 	}
@@ -333,23 +368,30 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 }
 
 func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan PriceResourceModel
+	var plan priceResourceStateModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	var state PriceResourceModel
+	var state priceResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	apiPriceUpdate, err := toAPIPriceUpdate(plan)
+	apiPriceUpdate, err := toAPIPriceUpdate(plan.PriceResourceModel)
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(path.Root("custom_data"), "Invalid custom_data", err.Error())
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, plan.Timeouts, timeoutOpUpdate, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	updated, err := r.client.UpdatePrice(ctx, state.ID.ValueString(), apiPriceUpdate)
 	if err != nil {
@@ -357,7 +399,7 @@ func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
-	if err := fromAPIPrice(*updated, &plan); err != nil {
+	if err := fromAPIPrice(*updated, &plan.PriceResourceModel); err != nil {
 		resp.Diagnostics.AddError("Error decoding Paddle price response", err.Error())
 		return
 	}
@@ -365,11 +407,18 @@ func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 }
 
 func (r *PriceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var state PriceResourceModel
+	var state priceResourceStateModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel, diags := resolveTimeout(ctx, state.Timeouts, timeoutOpDelete, defaultOpTimeout)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	defer cancel()
 
 	// A 404 means the price is already gone — successful destroy, not an
 	// error. Same tolerance Read() already has for the same status.
