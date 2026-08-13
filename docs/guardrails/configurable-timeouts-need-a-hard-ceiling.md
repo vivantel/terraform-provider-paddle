@@ -9,7 +9,7 @@ tags: [paddle, provider, timeouts, v5]
 
 Every resource's `timeouts{}` support must cap the *effective* timeout at
 30 minutes, regardless of what value a user configures. If a user sets
-`timeouts { delete = "24h" }`, the resource must still only ever wait up
+`timeouts = { delete = "24h" }`, the resource must still only ever wait up
 to 30 minutes before giving up — the configured value is honored up to
 that ceiling, not beyond it. Enforce this where the configured
 `time.Duration` is read and turned into a `context.WithTimeout`, not just
