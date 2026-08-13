@@ -85,13 +85,29 @@ var (
 // both (not just retryMaxRetryAfter alone) is the actual fix — either
 // one without the other still hits the same wall.
 //
+// A second, distinct bug in this same fix's first version, found via
+// empirical testing (a mock always-429 server) after CI kept failing at
+// ~60s despite the widened budget above: when a 429 response carries no
+// Retry-After header at all (or an unparseable one — happens for real
+// against the sandbox, not just hypothetically), do() falls back to
+// backoffDelay's exponential computation, which is capped by
+// retryMaxBackoff — 10s, untouched by the first version of this
+// function. With retryMaxAttempts left at only 8, 7 backoff waits at up
+// to 10s each exhausts the attempt count in under 90s regardless of how
+// large retryOverallBudget is — attempt == retryMaxAttempts returns
+// unconditionally, the remaining time budget never gets used.
+// retryMaxAttempts and retryMaxBackoff both need to widen too, or the
+// attempt count (not the time budget) silently becomes the real
+// constraint again.
+//
 // internal/client is Go's `internal/` convention — unimportable outside
 // this module — so this exported knob adds no public API surface beyond
 // this repo's own test code.
 func RelaxRetryTuningForAcceptanceTests() {
 	retryMaxRetryAfter = 5 * time.Minute
 	retryOverallBudget = 10 * time.Minute
-	retryMaxAttempts = 8
+	retryMaxAttempts = 40
+	retryMaxBackoff = 30 * time.Second
 }
 
 // withDefaultTimeout applies retryOverallBudget to ctx only when ctx does
