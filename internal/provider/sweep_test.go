@@ -24,19 +24,71 @@ import (
 // effect — see docs/decisions/0009-tflog-observability-and-acceptance-test-sweepers.md.
 //
 // Also widens the client's retry tuning for the whole binary run when
-// TF_ACC is set — see client.RelaxRetryTuningForAcceptanceTests' own
-// comment for why: this repo's acceptance-test suite runs many calls
-// back-to-back against one shared sandbox account and can trigger
-// sustained rate-limiting the client's production-sized retry defaults
-// aren't built to ride out, found via a real repeated CI failure,
-// 2026-08-12. Set before resource.TestMain(m) runs any test — the
-// package-var mutation only takes effect if it happens before the first
-// client call any test makes.
+// TF_ACC is set, or when this invocation is a sweep run (-sweep=..., the
+// shape sweep.yaml's `go test ./internal/provider -sweep=sandbox ...`
+// uses — sweep.yaml deliberately doesn't set TF_ACC=1, it's a distinct
+// invocation from the acceptance-test suite, so the TF_ACC check alone
+// would silently miss it) — see
+// client.RelaxRetryTuningForAcceptanceTests' own comment for why: this
+// repo's acceptance-test suite (and the sweeper, which can make many
+// sequential calls cleaning up a real backlog — the exact rate-limit
+// pain that originally motivated this release's timeouts{} feature)
+// runs many calls back-to-back against one shared sandbox account and
+// can trigger sustained rate-limiting the client's production-sized
+// retry defaults aren't built to ride out, found via a real repeated CI
+// failure, 2026-08-12. Set before resource.TestMain(m) runs any test —
+// the package-var mutation only takes effect if it happens before the
+// first client call any test (or sweeper) makes.
 func TestMain(m *testing.M) {
-	if os.Getenv("TF_ACC") != "" {
+	if os.Getenv("TF_ACC") != "" || isSweepRun() {
 		client.RelaxRetryTuningForAcceptanceTests()
 	}
 	resource.TestMain(m)
+}
+
+// isSweepRun reports whether this test binary was invoked with a -sweep
+// flag (any -sweep or -sweep=... argument) — checked directly against
+// os.Args rather than via the flag package, since flag parsing happens
+// inside resource.TestMain itself, after this function needs its answer.
+func isSweepRun() bool {
+	for _, arg := range os.Args[1:] {
+		if arg == "-sweep" || strings.HasPrefix(arg, "-sweep=") ||
+			arg == "--sweep" || strings.HasPrefix(arg, "--sweep=") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestIsSweepRun covers the exact invocation shape sweep.yaml uses
+// (-sweep=sandbox) plus a couple of nearby edge cases — this is what
+// gates client.RelaxRetryTuningForAcceptanceTests for a sweep run, so a
+// false negative here would silently leave the sweeper back on
+// production-sized retry defaults, defeating the fix.
+func TestIsSweepRun(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"no args", nil, false},
+		{"sweep.yaml's exact invocation", []string{"-sweep=sandbox", "-v", "-timeout=30m"}, true},
+		{"bare -sweep flag", []string{"-sweep"}, true},
+		{"double-dash form", []string{"--sweep=sandbox"}, true},
+		{"unrelated flags only", []string{"-run", "TestAcc", "-v"}, false},
+		{"a flag that merely contains sweep is not a match", []string{"-sweep-timeout=5m"}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			origArgs := os.Args
+			defer func() { os.Args = origArgs }()
+			os.Args = append([]string{"test-binary"}, tc.args...)
+
+			if got := isSweepRun(); got != tc.want {
+				t.Errorf("isSweepRun() with args %v = %v, want %v", tc.args, got, tc.want)
+			}
+		})
+	}
 }
 
 // acceptance test configs across product/price/discount already name or
