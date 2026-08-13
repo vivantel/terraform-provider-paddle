@@ -1,9 +1,11 @@
 ---
 title: Implementation plan — terraform-provider-paddle v5
-status: not started — 2026-08-12. Interviewed and scoped via /kms:roadmap
-  at the close of the v0.5.0 release session; every decision below was
-  made with the user before any code was written. Ships as v0.6.0 (see
-  the version-numbering note below).
+status: done — 2026-08-13. Shipped as v0.6.0, tagged, released
+  (non-prerelease), Registry-confirmed, independently smoke-tested.
+  Interviewed and scoped via /kms:roadmap at the close of the v0.5.0
+  release session; every decision below was made with the user before
+  any code was written. See "Definition of done for this plan" at the
+  bottom for the closing evidence trail.
 date: 2026-08-12
 tags: [paddle, provider, plan, v5, pii, timeouts, data-sources, testing]
 ---
@@ -795,8 +797,68 @@ just eyeball it for syntax. README changes committed.
 
 ## Step 7: housekeeping and release
 
-Status: not started. Depends on: Steps 1-6 all done and real-sandbox-
-verified.
+Status: done — 2026-08-13. `CHANGELOG.md`'s `[0.6.0]` entry generated via
+`/kms:changelog` from the real commit history since `v0.5.0` (PR #36,
+CI-green). Final `master` confirmed clean: `go build ./...`, `go vet
+./...`, `gofmt -l .`, `go test ./...`, `golangci-lint run ./...`,
+`tfplugindocs generate` (no diff).
+
+**Two real bugs found and fixed getting Step 7 itself CI-green, both
+worth recording** (PR #37):
+
+- `sweep.yaml`'s `-sweep=sandbox` invocation never sets `TF_ACC=1`, so
+  Step 5/6's `TF_ACC`-gated retry-tuning relaxation silently never
+  applied to sweeper runs — the exact rate-limit pain that originally
+  motivated this whole release's `timeouts{}` feature. Fixed by also
+  relaxing tuning when this test binary's own `os.Args` carry a `-sweep`
+  flag, unit-tested against `sweep.yaml`'s exact invocation shape.
+- The retry-tuning relaxation from PR #34 was itself still broken:
+  it widened `retryOverallBudget`/`retryMaxRetryAfter` but left
+  `retryMaxAttempts` (8) and `retryMaxBackoff` (10s) at values sized for
+  the old 60s budget — against a 429 with no `Retry-After` header (real
+  against the sandbox), the exponential-backoff fallback exhausts the
+  attempt count in under 90s regardless of how large the time budget is.
+  Found by empirical testing (a mock always-429 server measuring actual
+  elapsed time, not just reading the code), not by re-reading the
+  original fix and assuming it was right. Fixed by widening
+  `retryMaxAttempts` (8→40) and `retryMaxBackoff` (10s→30s) too, with a
+  new permanent regression test proving the loop now genuinely rides out
+  whatever overall budget is configured.
+- Also fixed, same PR: `TestAccPaddleNotificationDataSource_basic`
+  asserted a `status` value snapshotted via `ListNotificationsFiltered`
+  *before* `resource.Test`'s actual apply ran — Paddle's own delivery
+  pipeline can legitimately advance that status in the real wall-clock
+  gap between snapshot and apply, a genuine test-design race, not an
+  environmental flake (three consecutive reproductions confirmed it
+  wasn't randomness). Fixed by asserting the attribute is set rather
+  than pinning its exact value.
+
+Tagged `v0.6.0` (annotated, matching `v0.4.0`/`v0.5.0`'s message
+convention) and pushed. `release.yaml` completed successfully;
+`gh release view v0.6.0 --json isDraft,isPrerelease` confirmed both
+`false` — a real, non-prerelease release. `registry-smoke-test.yaml`
+(auto-triggered via `workflow_run`) passed, log confirmed `Installing
+vivantel/paddle v0.6.0...` specifically. Independently re-confirmed, not
+just via CI logs: a real `terraform init`/`validate` in a scratch
+directory (`/tmp/v060-smoke`) against `version = "0.6.0"` (no
+`dev_overrides` — the actual published Registry binary), exercising one
+schema from each new surface (`paddle_subscriptions` plural data source,
+`paddle_notification_replay` action, a `timeouts` attribute on
+`paddle_product`).
+
+**A third real bug surfaced by that independent smoke test itself**
+(PR #38, merged after the tag — docs-only, no re-tag needed): `terraform
+validate` rejected `README.md`'s own `timeouts{}` example verbatim —
+`timeouts.Attributes()` produces a nested *attribute* (`timeouts = {
+... }`), never a block, confirmed against the real published binary. The
+actual Go schema code was always correct; only the prose/examples
+(`README.md`'s intro paragraph and "Configuring timeouts" section,
+`CHANGELOG.md`'s `[0.6.0]` entry, and the
+configurable-timeouts-need-a-hard-ceiling guardrail's own example) used
+the wrong HCL syntax throughout. Fixed everywhere, re-validated the
+corrected example against the real published `v0.6.0` binary.
+
+Depends on: Steps 1-6 all done and real-sandbox-verified.
 
 1. `CHANGELOG.md`: `[0.6.0]` entry via `/kms:changelog`
    (`docs/skills/release-with-kms-changelog.md`), generated from the real
@@ -828,18 +890,40 @@ output as evidence, not just "should be fine."
 
 ## Definition of done for this plan
 
+**All done — 2026-08-13.**
+
 - Steps 1-7 all have their own `Status: done` with real verification
-  evidence (test output, PR/CI-run URLs), not "implemented" alone.
+  evidence (test output, PR/CI-run URLs), not "implemented" alone. ✅
 - `go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
-  `golangci-lint run ./...` all clean.
+  `golangci-lint run ./...` all clean on final `master` (commit
+  `650b7a0`, after PR #38). ✅
 - `tfplugindocs generate` produces no diff (`git diff --exit-code --
-  docs/`).
+  docs/`). ✅
 - Every new resource change (timeouts support) and every new data
   source/action verified against the real sandbox via CI's `acceptance`
   job — not just the new mock-server tests, per
   `docs/guardrails/mock-tests-supplement-not-replace-acceptance-tests.md`.
-- `CHANGELOG.md` has a `[0.6.0]` entry.
+  ✅ (PRs #30-#38, each CI-green including `acceptance` before merge.)
+- `CHANGELOG.md` has a `[0.6.0]` entry. ✅
 - Tagged and pushed as `v0.6.0` (not `v5.0.0`), release verified
   non-prerelease, Registry ingestion confirmed, and a real
   `terraform init`/`validate` smoke test run independently (not just
-  read from CI logs) against the actual published artifact.
+  read from CI logs) against the actual published artifact. ✅ —
+  `gh release view v0.6.0 --json isDraft,isPrerelease` → both `false`;
+  `registry-smoke-test.yaml` log confirmed `Installing vivantel/paddle
+  v0.6.0...`; independent `/tmp/v060-smoke` init/validate against the
+  real published binary passed (after fixing a real `timeouts{}` →
+  `timeouts = {}` syntax bug that same smoke test surfaced, PR #38).
+
+**Real bugs found and fixed via real-sandbox/real-Registry verification
+this plan's own process caught, not code review** — the throughline
+every prior plan in this series has proven out again: a broken
+data-source/resource split from adding `Timeouts` to a shared struct
+(PR #31), a rate-limit-hungry acceptance-test fixture (PR #33), a
+`refund`+`items`-vs-`credit`+`items` Paddle API validation nuance and a
+wrong test-helper choice (PR #35), a retry-tuning fix that was itself
+still broken until empirically measured (PR #37), a test asserting a
+racy status snapshot (PR #37), and a block-vs-attribute HCL syntax bug
+in every doc/example describing `timeouts` (PR #38, caught only by the
+plan's own independent-smoke-test requirement, not by CI). None of these
+were visible to `go build`, `go vet`, or a unit/mock test alone.
