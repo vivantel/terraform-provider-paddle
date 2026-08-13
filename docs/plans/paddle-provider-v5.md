@@ -681,8 +681,93 @@ notification entity was created, not just that the action didn't error),
 
 ## Step 6: docs
 
-Status: not started. Depends on: Steps 2, 4, 5 (documents features those
-steps build).
+Status: done — 2026-08-12. `examples/lookup-then-act/main.tf` — a real,
+complete config: `paddle_subscription` (by `customer_id`) →
+`paddle_subscription_cancel`; `paddle_transaction` (by `id`) →
+`paddle_adjustment` refunding `line_items[0].item_id`. `README.md`:
+Actions section gets a pointer to the example right after its existing
+code sample; intro paragraph and Actions section list updated to mention
+the four plural data sources and the sixth action
+(`paddle_notification_replay`) — a real gap from Steps 4/5, which added
+the surfaces but never touched `README.md`'s summary text, closed here
+rather than left for a future session. New "Configuring `timeouts{}`"
+section added to `README.md` (no `docs/guides/` convention existed
+anywhere in this repo, confirmed by checking first, so README is the
+right location per the plan's own instruction) — when to actually
+configure one, the 60s default/no-behavior-change-if-omitted point, and
+the 30m ceiling.
+
+**Definition of Done's "apply it against the sandbox once by hand"**:
+initially confirmed only with `terraform validate` against the real
+built provider schema (`dev_overrides`, no registry needed) — this
+caught a real error (actions weren't valid HCL syntax in the Terraform
+version initially tested against; the cached `hc-install` binary at a
+newer version validated cleanly). Per the user's explicit direction,
+went further than validate-only: added
+`internal/provider/example_lookup_then_act_acc_test.go`
+(`TestAccExampleLookupThenAct_appliesCleanly`), which reads the actual
+published example file from disk (`os.ReadFile`, not a re-typed copy),
+substitutes real fixture IDs (the pinned
+`PADDLE_TEST_CANCELED_SUBSCRIPTION_ID` fixture — safe, since
+`paddle_subscription_cancel`'s own already-canceled short-circuit means
+applying against it exercises the real lookup+action wiring without
+touching the shared *active* fixture other tests depend on — plus a
+fresh disposable transaction fixture, same pattern
+`TestAccPaddleTransactionDataSource_feedsAdjustment` already uses), and
+runs it through `resource.Test` against the real sandbox via CI's
+existing `PADDLE_API_KEY` — no new GitHub Actions workflow needed, and
+this becomes permanent regression coverage rather than a one-time
+manual check.
+
+`go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./...`,
+`golangci-lint run ./...` all clean. `tfplugindocs generate` produces no
+diff (no schema change this step).
+
+**Post-review fix (2026-08-12, same PR, before merge)**: CI's
+`acceptance` job caught a real bug in the new test —
+`TestAccExampleLookupThenAct_appliesCleanly` called
+`findTestSubscription(t, c, "canceled")`, but that helper always checks
+`PADDLE_TEST_SUBSCRIPTION_ID` (the pinned *active* fixture other tests
+depend on staying active) first regardless of the `status` argument
+passed in, and skips if it doesn't match — it can never find the
+canceled fixture this test actually needed. This repo already has a
+dedicated `findCanceledTestSubscription` helper for exactly this case
+(`action_paddle_subscription_acc_test.go`, added for
+`TestAccPaddleSubscriptionCancel_alreadyCanceledShortCircuits`, whose own
+comment explains why the two aren't the same function) — should have
+been used from the start. Fixed by switching to it; the test now skips
+cleanly with a clear message when no canceled fixture exists rather than
+silently skipping for the wrong reason.
+
+The same CI run also showed `TestAccPaddleNotificationDataSource_basic`
+failing (`status` expected `queued_for_retry`, got `needs_retry`) —
+confirmed via `git log` this test hasn't been touched since its original
+v4 commit, unrelated to this PR's diff; left as a separate, real,
+pre-existing issue for a future session rather than fixed here (out of
+Step 6's scope).
+
+The next CI run surfaced a second, more interesting real bug — this time
+in the example's actual HCL, not the test: Paddle rejected the credit
+config with `action = "refund"` + `type = "full"` + an item-level
+`items` array outright — `"items are not allowed when the adjustment
+type is full"`. Confirmed against the real sandbox that `action =
+"credit"` accepts the identical `type = "full"` + `items` shape fine
+(the same combination `TestAccPaddleAdjustment_basic` and
+`TestAccPaddleTransactionDataSource_feedsAdjustment` already use, both
+passing) — `refund` and `credit` have different validation rules for
+this combination, a real Paddle API nuance neither this plan nor
+`paddle_adjustment`'s own schema description called out before now.
+Fixed by switching the example to `action = "credit"`, documented
+in-line in the `.tf` file itself so a future reader doesn't hit the same
+surprise. A whole-transaction `refund` with no `items` (README's own
+basic Actions example) still works fine — this specific combination
+(item-level + `refund`) is what's actually disallowed.
+
+Real-sandbox verification of the example confirmed via CI's
+`acceptance` job on PR #35 (https://github.com/vivantel/terraform-provider-paddle/pull/35)
+after both fixes — `build`/`docs`/`lint`/`acceptance` all pass,
+including `TestAccExampleLookupThenAct_appliesCleanly` itself. Depends
+on: Steps 2, 4, 5 (documents features those steps build).
 
 1. `examples/lookup-then-act/main.tf` — a real, complete example: look up
    a subscription via `paddle_subscription` (or the new plural

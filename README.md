@@ -1,6 +1,6 @@
 # terraform-provider-paddle
 
-Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries via `paddle_checkout_domain`/`paddle_subscription`/`paddle_transaction`/`paddle_customer`/`paddle_events`/`paddle_notification` (data sources only — see below); and exposes five [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) (`paddle_adjustment`, `paddle_subscription_cancel`/`pause`/`resume`/`charge`) for one-time lifecycle operations — by calling Paddle's public REST API directly, no third-party service in the request path.
+Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources, each configurable via a `timeouts{}` block — see below); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries via `paddle_checkout_domain`/`paddle_subscription`/`paddle_transaction`/`paddle_customer`/`paddle_events`/`paddle_notification` (data sources only — see below), plus plural/list variants (`paddle_subscriptions`/`paddle_transactions`/`paddle_notifications`/`paddle_customers`) for "everything matching these filters" lookups; and exposes six [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) (`paddle_adjustment`, `paddle_subscription_cancel`/`pause`/`resume`/`charge`, `paddle_notification_replay`) for one-time lifecycle operations — by calling Paddle's public REST API directly, no third-party service in the request path.
 
 Not affiliated with or endorsed by Paddle.
 
@@ -85,12 +85,13 @@ There's nothing to `terraform import` either — this data source is read-only l
 
 Terraform requires `>= 1.14.0` for this section — see the `required_version` constraint above.
 
-This provider exposes five [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) — imperative, one-time operations, not resources with a lifecycle Terraform reconciles on a later plan:
+This provider exposes six [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) — imperative, one-time operations, not resources with a lifecycle Terraform reconciles on a later plan:
 
 - `paddle_adjustment` — creates a refund, credit, or chargeback-related adjustment against a transaction.
 - `paddle_subscription_cancel` / `paddle_subscription_pause` / `paddle_subscription_resume` / `paddle_subscription_charge` — subscription lifecycle operations. There's no `paddle_subscription` resource in this provider (subscriptions are checkout-created, not declared upfront — see `docs/decisions/0010-v3-scope-lifecycle-actions.md`), so each of these takes a plain `subscription_id` string rather than a resource reference.
+- `paddle_notification_replay` — resends a `delivered`/`failed` notification, creating a new notification entity linked to the same underlying event. Unlike the five actions above, this one isn't financial or irreversible (the worst case of an accidental duplicate invocation is one extra webhook delivery attempt, not a duplicate charge), so it has no search-before-invoke check and no special no-retry handling — see `docs/decisions/0012-v5-scope-pii-data-sources-timeouts-testing.md` item 4.
 
-**⚠️ These move real money or change a real customer's live billing state.** Two things make them categorically higher-stakes than every resource this provider manages:
+**⚠️ The five subscription/adjustment actions below move real money or change a real customer's live billing state** (`paddle_notification_replay` above does not — it's called out separately for exactly this reason). Two things make them categorically higher-stakes than every resource this provider manages:
 
 1. **Paddle has no idempotency-key mechanism anywhere in its API** (confirmed directly against Paddle's own docs — no header, no dedup support of any kind). A network failure partway through one of these calls leaves the actual outcome genuinely ambiguous — the request may or may not have been processed. This provider does not blindly retry these calls (unlike every resource's `Create`/`Update`, which do retry on `429`/`5xx`) — an ambiguous failure surfaces as an explicit error telling you to check the Paddle dashboard or API directly for the real outcome **before manually re-running `terraform apply`**. Each action also checks for a matching prior invocation before acting (a status check for the subscription actions, a search for `paddle_adjustment`/`paddle_subscription_charge`) — but this is best-effort correlation, not a guarantee, especially for `paddle_subscription_charge` (see its own schema description for the known false-positive case: two deliberately separate charges for identical items are indistinguishable from a retry).
 2. **`terraform apply -auto-approve` gives these zero human review before they execute.** This repo's own `.github/workflows/e2e.yaml` uses `-auto-approve` throughout, and it's a common pattern in CI generally — but that pattern is a poor fit for a config that includes any of these five actions. If you use one in an automated pipeline, review the plan (`terraform plan` shows exactly what an action will do — invoke arguments included — before `apply`) or gate it behind a real approval step, rather than auto-approving blind.
@@ -116,6 +117,8 @@ resource "terraform_data" "trigger" {
 }
 ```
 
+See `examples/lookup-then-act/main.tf` for a real, complete config putting this pattern together end-to-end: look up a subscription/transaction via a data source, feed the looked-up value straight into an action, with nothing hardcoded — the actual discovery-gap payoff these lookup data sources exist for.
+
 **Testing note**: this provider's own acceptance tests for the subscription actions (`cancel`/`pause`/`resume`/`charge`) can't self-provision a subscription fixture — Paddle subscriptions can only be created via a real checkout with a test card, no pure-API path exists, even in sandbox. Provisioning one via a real sandbox checkout is a manual, one-time step, same as `paddle_checkout_domain`'s dashboard-approval precondition above:
 
 1. Create a recurring (has a billing cycle) catalog price in the sandbox, if you don't have one already.
@@ -135,6 +138,26 @@ With that set, `internal/provider/action_paddle_subscription_acc_test.go`'s test
 3. **Don't** put `"Acc Test"` anywhere in its `description` — `sweep.yaml` runs weekly and deletes anything matching that substring (`isAccTestName` in `internal/provider/sweep_test.go`); this one needs to survive sweeps indefinitely, same as the pinned subscriptions above.
 
 Like the default-payment-link setting above, this is an ongoing sandbox account precondition, not a one-time fixture — set once, no code or secret changes needed.
+
+### Configuring `timeouts{}`
+
+`paddle_product`/`paddle_price`/`paddle_discount`/`paddle_discount_group`/`paddle_notification_setting` each accept an optional `timeouts` block (`create`/`read`/`update`/`delete`, each a duration string like `"30s"` or `"2h45m"`):
+
+```hcl
+resource "paddle_product" "example" {
+  name         = "Pro"
+  tax_category = "saas"
+
+  timeouts {
+    create = "5m"
+    delete = "5m"
+  }
+}
+```
+
+Every operation defaults to **60 seconds** if `timeouts{}` is omitted entirely — the same fixed budget this provider's HTTP client has always used, so nothing changes for a config that doesn't opt in. Configure one when you're actually hitting that default under real load — a catalog operation against a rate-limited or otherwise slow-responding Paddle account, the same real-world motivation that surfaced this provider's own sweeper needing more patience than a fixed 60s gave it (see `docs/decisions/0013-configurable-timeouts-architecture.md`). A caller-configured value fully overrides the default rather than tightening it — set `create = "5m"` and Terraform really will wait up to 5 minutes, not 60 seconds, before giving up.
+
+**Every configured value is capped at a hard 30-minute ceiling, no matter what you set.** `timeouts { delete = "24h" }` still only waits up to 30 minutes — a safety bound against a typo'd or misunderstood config (a missing unit, an extra zero) hanging a `terraform apply` indefinitely on a call that was never going to succeed (`docs/guardrails/configurable-timeouts-need-a-hard-ceiling.md`).
 
 ### `paddle_customer` — PII in your state file
 
