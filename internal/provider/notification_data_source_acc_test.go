@@ -21,6 +21,20 @@ import (
 // if any notification_setting is configured to receive those events) and
 // skips cleanly if there are none, rather than requiring one specific
 // notification to exist.
+//
+// Doesn't assert status against the exact value snapshotted at list
+// time (want.Status) — found the hard way via repeated, reproducible CI
+// failures, 2026-08-13: Paddle's own delivery pipeline can legitimately
+// advance a notification's status (e.g. not_attempted -> needs_retry)
+// in the real wall-clock time between this test's initial
+// ListNotificationsFiltered call and resource.Test's actual apply
+// (compiling/running Terraform), making an exact-match pin on a
+// snapshot taken moments earlier inherently racy — not a rate-limit or
+// environmental flake, a genuine test design bug. This test's actual
+// job is proving the id-lookup mechanism resolves to the right
+// notification and returns a real status, not pinning what that status
+// happens to be at snapshot time — TestCheckResourceAttrSet covers
+// that without the race.
 func TestAccPaddleNotificationDataSource_basic(t *testing.T) {
 	testAccPreCheck(t)
 	c := newTestAccClient()
@@ -46,7 +60,7 @@ data "paddle_notification" "test" {
 `, want.ID),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(dataSourceName, "id", want.ID),
-					resource.TestCheckResourceAttr(dataSourceName, "status", want.Status),
+					resource.TestCheckResourceAttrSet(dataSourceName, "status"),
 					resource.TestCheckResourceAttrSet(dataSourceName, "notification_setting_id"),
 					resource.TestCheckResourceAttrSet(dataSourceName, "logs.#"),
 				),
