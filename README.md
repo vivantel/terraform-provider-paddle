@@ -1,6 +1,6 @@
 # terraform-provider-paddle
 
-Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources, each configurable via a `timeouts{}` block — see below); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries via `paddle_checkout_domain`/`paddle_subscription`/`paddle_transaction`/`paddle_customer`/`paddle_events`/`paddle_notification` (data sources only — see below), plus plural/list variants (`paddle_subscriptions`/`paddle_transactions`/`paddle_notifications`/`paddle_customers`) for "everything matching these filters" lookups; and exposes six [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) (`paddle_adjustment`, `paddle_subscription_cancel`/`pause`/`resume`/`charge`, `paddle_notification_replay`) for one-time lifecycle operations — by calling Paddle's public REST API directly, no third-party service in the request path.
+Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources, each configurable via a `timeouts` attribute — see below); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries via `paddle_checkout_domain`/`paddle_subscription`/`paddle_transaction`/`paddle_customer`/`paddle_events`/`paddle_notification` (data sources only — see below), plus plural/list variants (`paddle_subscriptions`/`paddle_transactions`/`paddle_notifications`/`paddle_customers`) for "everything matching these filters" lookups; and exposes six [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) (`paddle_adjustment`, `paddle_subscription_cancel`/`pause`/`resume`/`charge`, `paddle_notification_replay`) for one-time lifecycle operations — by calling Paddle's public REST API directly, no third-party service in the request path.
 
 Not affiliated with or endorsed by Paddle.
 
@@ -139,25 +139,25 @@ With that set, `internal/provider/action_paddle_subscription_acc_test.go`'s test
 
 Like the default-payment-link setting above, this is an ongoing sandbox account precondition, not a one-time fixture — set once, no code or secret changes needed.
 
-### Configuring `timeouts{}`
+### Configuring `timeouts`
 
-`paddle_product`/`paddle_price`/`paddle_discount`/`paddle_discount_group`/`paddle_notification_setting` each accept an optional `timeouts` block (`create`/`read`/`update`/`delete`, each a duration string like `"30s"` or `"2h45m"`):
+`paddle_product`/`paddle_price`/`paddle_discount`/`paddle_discount_group`/`paddle_notification_setting` each accept an optional `timeouts` attribute (`create`/`read`/`update`/`delete`, each a duration string like `"30s"` or `"2h45m"`) — a nested *attribute*, assigned with `=`, not a block:
 
 ```hcl
 resource "paddle_product" "example" {
   name         = "Pro"
   tax_category = "saas"
 
-  timeouts {
+  timeouts = {
     create = "5m"
     delete = "5m"
   }
 }
 ```
 
-Every operation defaults to **60 seconds** if `timeouts{}` is omitted entirely — the same fixed budget this provider's HTTP client has always used, so nothing changes for a config that doesn't opt in. Configure one when you're actually hitting that default under real load — a catalog operation against a rate-limited or otherwise slow-responding Paddle account, the same real-world motivation that surfaced this provider's own sweeper needing more patience than a fixed 60s gave it (see `docs/decisions/0013-configurable-timeouts-architecture.md`). A caller-configured value fully overrides the default rather than tightening it — set `create = "5m"` and Terraform really will wait up to 5 minutes, not 60 seconds, before giving up.
+Every operation defaults to **60 seconds** if `timeouts` is omitted entirely — the same fixed budget this provider's HTTP client has always used, so nothing changes for a config that doesn't opt in. Configure one when you're actually hitting that default under real load — a catalog operation against a rate-limited or otherwise slow-responding Paddle account, the same real-world motivation that surfaced this provider's own sweeper needing more patience than a fixed 60s gave it (see `docs/decisions/0013-configurable-timeouts-architecture.md`). A caller-configured value fully overrides the default rather than tightening it — set `create = "5m"` and Terraform really will wait up to 5 minutes, not 60 seconds, before giving up.
 
-**Every configured value is capped at a hard 30-minute ceiling, no matter what you set.** `timeouts { delete = "24h" }` still only waits up to 30 minutes — a safety bound against a typo'd or misunderstood config (a missing unit, an extra zero) hanging a `terraform apply` indefinitely on a call that was never going to succeed (`docs/guardrails/configurable-timeouts-need-a-hard-ceiling.md`).
+**Every configured value is capped at a hard 30-minute ceiling, no matter what you set.** `timeouts = { delete = "24h" }` still only waits up to 30 minutes — a safety bound against a typo'd or misunderstood config (a missing unit, an extra zero) hanging a `terraform apply` indefinitely on a call that was never going to succeed (`docs/guardrails/configurable-timeouts-need-a-hard-ceiling.md`).
 
 ### `paddle_customer` — PII in your state file
 
