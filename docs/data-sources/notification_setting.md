@@ -36,7 +36,7 @@ output "webhook_secret" {
 - `api_version` (Number) API version used for event payloads sent to this destination.
 - `description` (String) Notification setting description (1–500 characters).
 - `destination` (String) Webhook URL or email address.
-- `endpoint_secret_key` (String, Sensitive) Secret key Paddle uses to sign webhook payloads sent to this destination.
+- `endpoint_secret_key` (String, Sensitive, Deprecated) Secret key Paddle uses to sign webhook payloads sent to this destination. **Deprecated: this writes the real secret into your Terraform state file in plaintext** — `Sensitive` only redacts CLI/log output, it doesn't encrypt state. Prefer the `paddle_notification_setting_secret` ephemeral resource, which fetches this same value without persisting it.
 - `include_sensitive_fields` (Boolean) Whether sensitive fields are included in event payloads.
 - `subscribed_events` (List of String) Event type names this destination subscribes to (e.g., `transaction.billed`).
 - `traffic_source` (String) Traffic source: `platform`, `simulation`, or `all`.

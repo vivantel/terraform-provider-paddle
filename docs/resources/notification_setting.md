@@ -51,7 +51,7 @@ resource "paddle_notification_setting" "orders" {
 
 ### Read-Only
 
-- `endpoint_secret_key` (String, Sensitive) Secret key Paddle uses to sign webhook payloads sent to this destination.
+- `endpoint_secret_key` (String, Sensitive, Deprecated) Secret key Paddle uses to sign webhook payloads sent to this destination. **Deprecated: this writes the real secret into your Terraform state file in plaintext** — `Sensitive` only redacts CLI/log output, it doesn't encrypt state. Prefer the `paddle_notification_setting_secret` ephemeral resource, which fetches this same value without persisting it.
 - `id` (String) Paddle notification setting ID (prefix `ntfset_...`).
 
 <a id="nestedatt--timeouts"></a>
