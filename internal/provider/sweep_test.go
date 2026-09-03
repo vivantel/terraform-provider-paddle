@@ -28,19 +28,20 @@ import (
 // shape sweep.yaml's `go test ./internal/provider -sweep=sandbox ...`
 // uses — sweep.yaml deliberately doesn't set TF_ACC=1, it's a distinct
 // invocation from the acceptance-test suite, so the TF_ACC check alone
-// would silently miss it) — see
-// client.RelaxRetryTuningForAcceptanceTests' own comment for why: this
-// repo's acceptance-test suite (and the sweeper, which can make many
-// sequential calls cleaning up a real backlog — the exact rate-limit
-// pain that originally motivated this release's timeouts{} feature)
-// runs many calls back-to-back against one shared sandbox account and
-// can trigger sustained rate-limiting the client's production-sized
-// retry defaults aren't built to ride out, found via a real repeated CI
-// failure, 2026-08-12. Set before resource.TestMain(m) runs any test —
-// the package-var mutation only takes effect if it happens before the
-// first client call any test (or sweeper) makes.
+// would silently miss it). The two get *different* relaxed tuning, not
+// the same one: client.RelaxRetryTuningForAcceptanceTests (a handful of
+// precious calls, worth waiting up to 10 minutes on any one) versus
+// client.RelaxRetryTuningForSweepRun (dozens of best-effort calls across
+// a backlog, each already tolerant of its own failure — see that
+// function's own comment for the real CI timeout this distinction
+// fixes, found 2026-09-03). Set before resource.TestMain(m) runs any
+// test — the package-var mutation only takes effect if it happens
+// before the first client call any test (or sweeper) makes.
 func TestMain(m *testing.M) {
-	if os.Getenv("TF_ACC") != "" || isSweepRun() {
+	switch {
+	case isSweepRun():
+		client.RelaxRetryTuningForSweepRun()
+	case os.Getenv("TF_ACC") != "":
 		client.RelaxRetryTuningForAcceptanceTests()
 	}
 	resource.TestMain(m)

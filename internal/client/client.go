@@ -110,6 +110,48 @@ func RelaxRetryTuningForAcceptanceTests() {
 	retryMaxBackoff = 30 * time.Second
 }
 
+// RelaxRetryTuningForSweepRun widens this client's retry tuning for a
+// sweep run specifically — deliberately different from (and much shorter
+// than) RelaxRetryTuningForAcceptanceTests above, even though both exist
+// to ride out the same sustained sandbox rate-limiting.
+//
+// An acceptance test makes a handful of calls, each backing a real
+// assertion — worth waiting up to 10 minutes on any one of them rather
+// than reporting a false failure. A sweep run is the opposite shape: it
+// can issue dozens of sequential calls across a real backlog (list-then-
+// delete/archive per leaked object, and for
+// sweepTestFixtureCustomers specifically, a further list-then-cancel/
+// credit call per that customer's own leaked transactions) — and every
+// one of those call sites already treats an individual failure as
+// skip-and-log-and-continue (see sweepMatchingProducts,
+// sweepMatchingNotificationSettings, sweepTestFixtureCustomers in
+// internal/provider/sweep_test.go), not fatal, because a missed item
+// just gets picked up by the next scheduled sweep. Giving every one of
+// those calls the acceptance-test-sized 10-minute budget means a
+// handful of stubborn items can consume the sweep's entire time budget
+// before that skip-and-continue logic ever gets a chance to run on the
+// rest — confirmed the hard way, 2026-09-03: sweep.yaml's `go test
+// -sweep=sandbox -timeout=30m` was killed mid-run ("Test killed with
+// quit: ran too long (33m0s)") on both a manually-triggered run and an
+// earlier scheduled one, with a real backlog of leaked notification
+// settings sitting unswept as a result (confirmed by a later CI run
+// hitting notification_setting_cannot_be_duplicate against one of
+// them).
+//
+// These values are wider than the production defaults (the original
+// 2026-08-12 bug this whole retry-relaxation mechanism exists for was a
+// real sweep failing even at 60s/30s) but only a fraction of the
+// acceptance-test tuning — enough to ride out a brief throttling burst
+// on any one call, short enough that a call still being throttled after
+// that gives up and lets the sweep loop move on to the next item rather
+// than stall the whole run on it.
+func RelaxRetryTuningForSweepRun() {
+	retryMaxRetryAfter = 60 * time.Second
+	retryOverallBudget = 90 * time.Second
+	retryMaxAttempts = 8
+	retryMaxBackoff = 15 * time.Second
+}
+
 // withDefaultTimeout applies retryOverallBudget to ctx only when ctx does
 // not already carry a deadline of its own. A resource with a configured
 // timeouts{} block derives its own deadline (see

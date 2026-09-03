@@ -68,3 +68,80 @@ func TestRelaxRetryTuningForAcceptanceTests_RidesOutTheFullOverallBudget(t *test
 		t.Errorf("calls = %d, want at least 2 — a single attempt wouldn't distinguish this from doNoRetry", calls)
 	}
 }
+
+// TestRelaxRetryTuningForSweepRun_RidesOutItsOwnOverallBudget is
+// RelaxRetryTuningForSweepRun's counterpart to the acceptance-tuning test
+// above — same "does the loop actually use the full budget, not cut off
+// early on attempt count/backoff cap" regression shape, proven the same
+// way (shrink the budget for the test rather than waiting out the real
+// value).
+func TestRelaxRetryTuningForSweepRun_RidesOutItsOwnOverallBudget(t *testing.T) {
+	origMaxAttempts, origBaseBackoff, origMaxBackoff := retryMaxAttempts, retryBaseBackoff, retryMaxBackoff
+	origMaxRetryAfter, origOverallBudget := retryMaxRetryAfter, retryOverallBudget
+	t.Cleanup(func() {
+		retryMaxAttempts, retryBaseBackoff, retryMaxBackoff = origMaxAttempts, origBaseBackoff, origMaxBackoff
+		retryMaxRetryAfter, retryOverallBudget = origMaxRetryAfter, origOverallBudget
+	})
+
+	RelaxRetryTuningForSweepRun()
+	retryOverallBudget = 3 * time.Second
+
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "test-key")
+	start := time.Now()
+	err := c.do(context.Background(), http.MethodPost, "/customers", nil, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("do() = nil error, want a timeout/429 error from a server that always returns 429")
+	}
+	if elapsed < 2*time.Second {
+		t.Errorf("elapsed = %v, want close to the %v overall budget", elapsed, retryOverallBudget)
+	}
+	if calls < 2 {
+		t.Errorf("calls = %d, want at least 2 — a single attempt wouldn't distinguish this from doNoRetry", calls)
+	}
+}
+
+// TestRelaxRetryTuningForSweepRun_IsMuchShorterThanAcceptanceTests is the
+// actual regression test for the 2026-09-03 sweep timeout bug: a sweep run
+// can issue far more sequential calls than an acceptance test run (a real
+// backlog across several sweepers, each already tolerant of an individual
+// call failing — see RelaxRetryTuningForSweepRun's own comment), so
+// giving every one of those calls the same 10-minute-scale budget
+// acceptance tests get is precisely what let a handful of stubborn calls
+// consume a sweep run's entire time budget before its own
+// skip-and-continue logic ever got to run on the rest. If a future change
+// makes these two functions converge again (e.g. by copying one's values
+// into the other), this test catches it.
+func TestRelaxRetryTuningForSweepRun_IsMuchShorterThanAcceptanceTests(t *testing.T) {
+	origMaxAttempts, origBaseBackoff, origMaxBackoff := retryMaxAttempts, retryBaseBackoff, retryMaxBackoff
+	origMaxRetryAfter, origOverallBudget := retryMaxRetryAfter, retryOverallBudget
+	t.Cleanup(func() {
+		retryMaxAttempts, retryBaseBackoff, retryMaxBackoff = origMaxAttempts, origBaseBackoff, origMaxBackoff
+		retryMaxRetryAfter, retryOverallBudget = origMaxRetryAfter, origOverallBudget
+	})
+
+	RelaxRetryTuningForAcceptanceTests()
+	acceptanceBudget, acceptanceRetryAfter := retryOverallBudget, retryMaxRetryAfter
+
+	RelaxRetryTuningForSweepRun()
+	sweepBudget, sweepRetryAfter := retryOverallBudget, retryMaxRetryAfter
+
+	// "Much shorter" per RelaxRetryTuningForSweepRun's own comment — a
+	// fraction of the acceptance-test tuning, not just nominally smaller.
+	// A generous 1/3 threshold catches an accidental near-copy without
+	// being brittle against reasonable future retuning of either value.
+	if sweepBudget > acceptanceBudget/3 {
+		t.Errorf("sweep retryOverallBudget = %v, acceptance = %v — sweep tuning must stay a small fraction of acceptance tuning, not converge with it (that's the exact bug this fix addresses)", sweepBudget, acceptanceBudget)
+	}
+	if sweepRetryAfter > acceptanceRetryAfter/3 {
+		t.Errorf("sweep retryMaxRetryAfter = %v, acceptance = %v — same reasoning as retryOverallBudget above", sweepRetryAfter, acceptanceRetryAfter)
+	}
+}
