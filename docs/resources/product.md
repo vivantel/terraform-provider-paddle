@@ -3,12 +3,12 @@
 page_title: "paddle_product Resource - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See Paddle API Reference https://developer.paddle.com/api-reference/products/overview. Paddle has no hard delete for products; terraform destroy archives the product instead (status becomes archived).
+  A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See Paddle API Reference https://developer.paddle.com/api-reference/products/overview. Paddle has no hard delete for products; terraform destroy archives the product instead (status becomes archived). Supports resource identity and import by identity (import { identity = { id = "pro_..." } }), and a matching list block for bulk-discovering existing products via terraform query — see the README's "List resources" section.
 ---
 
 # paddle_product (Resource)
 
-A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See [Paddle API Reference](https://developer.paddle.com/api-reference/products/overview). Paddle has no hard delete for products; `terraform destroy` archives the product instead (status becomes `archived`).
+A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See [Paddle API Reference](https://developer.paddle.com/api-reference/products/overview). Paddle has no hard delete for products; `terraform destroy` archives the product instead (status becomes `archived`). Supports resource identity and import by identity (`import { identity = { id = "pro_..." } }`), and a matching `list` block for bulk-discovering existing products via `terraform query` — see the README's "List resources" section.
 
 ## Example Usage
 

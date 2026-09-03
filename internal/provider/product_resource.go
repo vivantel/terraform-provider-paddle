@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -18,6 +19,7 @@ import (
 
 var _ resource.Resource = &ProductResource{}
 var _ resource.ResourceWithImportState = &ProductResource{}
+var _ resource.ResourceWithIdentity = &ProductResource{}
 
 func NewProductResource() resource.Resource {
 	return &ProductResource{}
@@ -64,7 +66,7 @@ func (r *ProductResource) Metadata(_ context.Context, req resource.MetadataReque
 
 func (r *ProductResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See [Paddle API Reference](https://developer.paddle.com/api-reference/products/overview). Paddle has no hard delete for products; `terraform destroy` archives the product instead (status becomes `archived`).",
+		MarkdownDescription: "A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See [Paddle API Reference](https://developer.paddle.com/api-reference/products/overview). Paddle has no hard delete for products; `terraform destroy` archives the product instead (status becomes `archived`). Supports resource identity and import by identity (`import { identity = { id = \"pro_...\" } }`), and a matching `list` block for bulk-discovering existing products via `terraform query` — see the README's \"List resources\" section.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -110,6 +112,25 @@ func (r *ProductResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			},
 			"custom_data": customDataAttribute(),
 			"timeouts":    describedTimeouts(ctx),
+		},
+	}
+}
+
+// IdentitySchema — id alone, prefix pro_..., stable for the resource's
+// whole lifetime (Paddle never reassigns a product's ID, confirmed by the
+// same reasoning "id" already gets UseStateForUnknown above). Backs both
+// import-by-identity (ImportState below, via
+// resource.ImportStatePassthroughWithIdentity) and this resource's list
+// resource counterpart (product_list_resource.go) — list results are
+// required to carry an Identity, which the framework builds from exactly
+// this schema.
+func (r *ProductResource) IdentitySchema(_ context.Context, _ resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
+	resp.IdentitySchema = identityschema.Schema{
+		Attributes: map[string]identityschema.Attribute{
+			"id": identityschema.StringAttribute{
+				RequiredForImport: true,
+				Description:       "Paddle product ID (prefix pro_...).",
+			},
 		},
 	}
 }
@@ -199,6 +220,7 @@ func (r *ProductResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	resp.Diagnostics.Append(resp.Identity.SetAttribute(ctx, path.Root("id"), plan.ID.ValueString())...)
 }
 
 func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -242,6 +264,7 @@ func (r *ProductResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(resp.Identity.SetAttribute(ctx, path.Root("id"), state.ID.ValueString())...)
 }
 
 func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -281,6 +304,7 @@ func (r *ProductResource) Update(ctx context.Context, req resource.UpdateRequest
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	resp.Diagnostics.Append(resp.Identity.SetAttribute(ctx, path.Root("id"), state.ID.ValueString())...)
 }
 
 func (r *ProductResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -307,5 +331,9 @@ func (r *ProductResource) Delete(ctx context.Context, req resource.DeleteRequest
 }
 
 func (r *ProductResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	// Supports both `terraform import`/a config block's plain `id` (the
+	// long-standing path) and importing by identity (Terraform 1.12+,
+	// import { identity = { id = "pro_..." } }) — the helper picks whichever
+	// req actually carries.
+	resource.ImportStatePassthroughWithIdentity(ctx, path.Root("id"), path.Root("id"), req, resp)
 }
