@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.1] - 2026-09-03
+
+A patch release: no schema, attribute, or behavior changes for existing configurations. Provider docs (descriptions and examples) got a full rewrite for readability and completeness, a dependency CVE got patched, CI's broken lint job got fixed, and post-release verification left open after `v0.6.0` got closed out.
+
+### Added
+
+- Every resource, data source, and action's `MarkdownDescription` rewritten for a human reader — a one-sentence intro, real per-attribute descriptions (no more bare `(Type)` attributes), and internal `docs/guardrails/...`/`docs/decisions/...` links converted to prose since they 404 on the Registry. Added the missing `## Example Usage` section for all 6 actions and the 9 data sources that lacked one. A review pass before this shipped caught and fixed several real regressions the rewrite itself had introduced along the way — including 13 files left `gofmt`-invalid (would have failed CI outright), two safety-critical `**bold**` guardrail warnings silently stripped, and all 6 action example directories missing the `paddle_` prefix `tfplugindocs` actually requires, which had left every action doc silently rendering with no examples at all.
+- A shared `describedTimeouts()` helper so all five resources' `timeouts` attribute documents its 60-second default and 30-minute hard ceiling from one place instead of five separate inline calls.
+
+### Fixed
+
+- `google.golang.org/grpc`, a transitive dependency, patched from `1.83.0` to `1.83.1` — fixes CVE-2026-84304 (GHSA-vp52-pcj8-j9qc), a high-severity denial-of-service via HTTP/2 DATA-frame fragmentation.
+- CI's `lint` job had silently started failing on every push: `golangci-lint@latest` had drifted to a release requiring Go 1.26, while CI pins Go 1.25. Pinned the install to `v2.12.2`, the latest release still on the 1.25 floor.
+- README's own `timeouts` configuration example used block syntax (`timeouts { ... }`) instead of the nested-attribute syntax (`timeouts = { ... }`) the schema actually expects — caught by validating the README's example against the real published `v0.6.0` binary, which rejected it outright. Fixed everywhere the wrong syntax appeared: `README.md`, `CHANGELOG.md`'s `[0.6.0]` entry, and the `configurable-timeouts-need-a-hard-ceiling` guardrail's own example.
+
+### Documentation
+
+- Closed out the `paddle-provider-v5` plan with real post-release verification evidence: `v0.6.0` confirmed tagged, released, Terraform Registry-ingested, and independently smoke-tested via a real `terraform init`/`validate` against the published binary.
+
 ## [0.6.0] - 2026-08-13
 
 Closes a real PII-warning gap found the night `0.5.0` shipped (`paddle_events`' `data` field never got the same state-security warning `paddle_customer` carries), adds four plural/list data sources complementing `0.5.0`'s singular lookups, a `paddle_notification_replay` action, a configurable `timeouts` attribute replacing the client's previously-hardcoded 60s HTTP timeout, and a reusable mock-server testing harness retrofitted onto all five resources. Real-sandbox verification surfaced (and fixed) several genuine bugs along the way, including two real Paddle API validation nuances no prior release had documented and a sandbox-wide rate-limit exhaustion issue in this project's own CI retry tuning.
