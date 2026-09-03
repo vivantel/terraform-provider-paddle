@@ -1,6 +1,6 @@
 # terraform-provider-paddle
 
-Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources, each configurable via a `timeouts` attribute — see below); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries via `paddle_checkout_domain`/`paddle_subscription`/`paddle_transaction`/`paddle_customer`/`paddle_events`/`paddle_notification` (data sources only — see below), plus plural/list variants (`paddle_subscriptions`/`paddle_transactions`/`paddle_notifications`/`paddle_customers`) for "everything matching these filters" lookups; and exposes six [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) (`paddle_adjustment`, `paddle_subscription_cancel`/`pause`/`resume`/`charge`, `paddle_notification_replay`) for one-time lifecycle operations — by calling Paddle's public REST API directly, no third-party service in the request path.
+Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources, each configurable via a `timeouts` attribute — see below); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries via `paddle_checkout_domain`/`paddle_subscription`/`paddle_transaction`/`paddle_customer`/`paddle_events`/`paddle_notification` (data sources only — see below), plus plural/list variants (`paddle_subscriptions`/`paddle_transactions`/`paddle_notifications`/`paddle_customers`) for "everything matching these filters" lookups; exposes six [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) (`paddle_adjustment`, `paddle_subscription_cancel`/`pause`/`resume`/`charge`, `paddle_notification_replay`) for one-time lifecycle operations; and fetches secret-shaped values via [ephemeral resources](https://developer.hashicorp.com/terraform/language/resources/ephemeral) (`paddle_notification_setting_secret` — see below) that are never written to state — by calling Paddle's public REST API directly, no third-party service in the request path.
 
 Not affiliated with or endorsed by Paddle.
 
@@ -158,6 +158,20 @@ resource "paddle_product" "example" {
 Every operation defaults to **60 seconds** if `timeouts` is omitted entirely — the same fixed budget this provider's HTTP client has always used, so nothing changes for a config that doesn't opt in. Configure one when you're actually hitting that default under real load — a catalog operation against a rate-limited or otherwise slow-responding Paddle account, the same real-world motivation that surfaced this provider's own sweeper needing more patience than a fixed 60s gave it (see `docs/decisions/0013-configurable-timeouts-architecture.md`). A caller-configured value fully overrides the default rather than tightening it — set `create = "5m"` and Terraform really will wait up to 5 minutes, not 60 seconds, before giving up.
 
 **Every configured value is capped at a hard 30-minute ceiling, no matter what you set.** `timeouts = { delete = "24h" }` still only waits up to 30 minutes — a safety bound against a typo'd or misunderstood config (a missing unit, an extra zero) hanging a `terraform apply` indefinitely on a call that was never going to succeed (`docs/guardrails/configurable-timeouts-need-a-hard-ceiling.md`).
+
+### Ephemeral resources — secrets without state
+
+Terraform requires `>= 1.10.0` for [ephemeral resources](https://developer.hashicorp.com/terraform/language/resources/ephemeral) — comfortably below the `>= 1.14.0` this provider already requires for Actions above, so no separate version bump is needed to use one.
+
+`paddle_notification_setting`'s `endpoint_secret_key` (the webhook signing secret Paddle uses to sign payloads) is `Sensitive`, but **`Sensitive` only redacts CLI/log output — it does not encrypt state.** That attribute still writes the real secret into your state file in plaintext, same as any other `Computed` attribute, and is now deprecated for exactly this reason:
+
+```hcl
+ephemeral "paddle_notification_setting_secret" "webhook" {
+  notification_setting_id = paddle_notification_setting.example.id
+}
+```
+
+`ephemeral.paddle_notification_setting_secret.webhook.endpoint_secret_key` is fetched fresh on every `plan`/`apply` this ephemeral resource appears in and is never written to state at all. Feed it into whatever actually consumes it via a write-only (`*_wo`) attribute, not a regular one — a write-only attribute doesn't persist to state either, regardless of where the value it receives came from. `paddle_notification_setting`'s own `endpoint_secret_key` attribute (and its data source's) still works unchanged — this is additive, not a breaking removal — but prefer the ephemeral resource in any new configuration.
 
 ### `paddle_customer` — PII in your state file
 

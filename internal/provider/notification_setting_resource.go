@@ -121,7 +121,8 @@ func (r *NotificationSettingResource) Schema(ctx context.Context, _ resource.Sch
 			"endpoint_secret_key": schema.StringAttribute{
 				Computed:            true,
 				Sensitive:           true,
-				MarkdownDescription: "Secret key Paddle uses to sign webhook payloads sent to this destination.",
+				MarkdownDescription: "Secret key Paddle uses to sign webhook payloads sent to this destination. **Deprecated: this writes the real secret into your Terraform state file in plaintext** — `Sensitive` only redacts CLI/log output, it doesn't encrypt state. Prefer the `paddle_notification_setting_secret` ephemeral resource, which fetches this same value without persisting it.",
+				DeprecationMessage:  "Persists the secret to state in plaintext. Use the paddle_notification_setting_secret ephemeral resource instead.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"timeouts": describedTimeouts(ctx),
