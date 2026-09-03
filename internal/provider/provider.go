@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/action"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
+	"github.com/hashicorp/terraform-plugin-framework/list"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -20,6 +21,7 @@ import (
 var _ provider.Provider = &PaddleProvider{}
 var _ provider.ProviderWithActions = &PaddleProvider{}
 var _ provider.ProviderWithEphemeralResources = &PaddleProvider{}
+var _ provider.ProviderWithListResources = &PaddleProvider{}
 
 type PaddleProvider struct {
 	// version is set by main.go at build time (see .goreleaser.yml);
@@ -45,7 +47,7 @@ func (p *PaddleProvider) Metadata(_ context.Context, _ provider.MetadataRequest,
 
 func (p *PaddleProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "The Paddle provider manages Paddle Billing catalog resources (products, prices, discounts, discount groups, notification settings); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries (data sources only); provides actions for one-time lifecycle operations (adjustments, subscription cancel/pause/resume/charge, notification replay) that don't have a resource lifecycle of their own; and fetches secret-shaped values (currently a notification setting's webhook signing secret) as ephemeral resources, never written to Terraform state. Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
+		MarkdownDescription: "The Paddle provider manages Paddle Billing catalog resources (products, prices, discounts, discount groups, notification settings); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries (data sources only); provides actions for one-time lifecycle operations (adjustments, subscription cancel/pause/resume/charge, notification replay) that don't have a resource lifecycle of their own; fetches secret-shaped values (currently a notification setting's webhook signing secret) as ephemeral resources, never written to Terraform state; and supports `terraform query` list blocks (currently `paddle_product` only) for bulk-discovering existing infrastructure to import. Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
 				MarkdownDescription: "Paddle API key. Can also be set via the `PADDLE_API_KEY` environment variable.",
@@ -121,6 +123,7 @@ func (p *PaddleProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	resp.ResourceData = c
 	resp.ActionData = c
 	resp.EphemeralResourceData = c
+	resp.ListResourceData = c
 }
 
 func (p *PaddleProvider) Resources(_ context.Context) []func() resource.Resource {
@@ -159,6 +162,17 @@ func (p *PaddleProvider) DataSources(_ context.Context) []func() datasource.Data
 func (p *PaddleProvider) EphemeralResources(_ context.Context) []func() ephemeral.EphemeralResource {
 	return []func() ephemeral.EphemeralResource{
 		NewNotificationSettingSecretEphemeral,
+	}
+}
+
+// ListResources — paddle_product only for now: list resources need
+// resource identity implemented on their target resource first (Terraform
+// 1.14+; see product_resource.go's IdentitySchema comment), which only
+// paddle_product has so far. Extending to the other four resources is one
+// IdentitySchema + one *_list_resource.go file each, no new plumbing.
+func (p *PaddleProvider) ListResources(_ context.Context) []func() list.ListResource {
+	return []func() list.ListResource{
+		NewProductListResource,
 	}
 }
 

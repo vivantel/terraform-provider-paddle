@@ -1,6 +1,6 @@
 # terraform-provider-paddle
 
-Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources, each configurable via a `timeouts` attribute — see below); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries via `paddle_checkout_domain`/`paddle_subscription`/`paddle_transaction`/`paddle_customer`/`paddle_events`/`paddle_notification` (data sources only — see below), plus plural/list variants (`paddle_subscriptions`/`paddle_transactions`/`paddle_notifications`/`paddle_customers`) for "everything matching these filters" lookups; exposes six [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) (`paddle_adjustment`, `paddle_subscription_cancel`/`pause`/`resume`/`charge`, `paddle_notification_replay`) for one-time lifecycle operations; and fetches secret-shaped values via [ephemeral resources](https://developer.hashicorp.com/terraform/language/resources/ephemeral) (`paddle_notification_setting_secret` — see below) that are never written to state — by calling Paddle's public REST API directly, no third-party service in the request path.
+Unofficial Terraform provider for [Paddle Billing](https://developer.paddle.com/api-reference/overview). Manages `paddle_product`, `paddle_price`, `paddle_discount`, `paddle_discount_group`, and `paddle_notification_setting` (plus matching data sources, each configurable via a `timeouts` attribute — see below); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries via `paddle_checkout_domain`/`paddle_subscription`/`paddle_transaction`/`paddle_customer`/`paddle_events`/`paddle_notification` (data sources only — see below), plus plural/list variants (`paddle_subscriptions`/`paddle_transactions`/`paddle_notifications`/`paddle_customers`) for "everything matching these filters" lookups; exposes six [Terraform actions](https://developer.hashicorp.com/terraform/language/actions) (`paddle_adjustment`, `paddle_subscription_cancel`/`pause`/`resume`/`charge`, `paddle_notification_replay`) for one-time lifecycle operations; fetches secret-shaped values via [ephemeral resources](https://developer.hashicorp.com/terraform/language/resources/ephemeral) (`paddle_notification_setting_secret` — see below) that are never written to state; and supports bulk-discovering existing infrastructure via [`terraform query`](https://developer.hashicorp.com/terraform/language/query) `list` blocks (`paddle_product` — see below) — by calling Paddle's public REST API directly, no third-party service in the request path.
 
 Not affiliated with or endorsed by Paddle.
 
@@ -172,6 +172,29 @@ ephemeral "paddle_notification_setting_secret" "webhook" {
 ```
 
 `ephemeral.paddle_notification_setting_secret.webhook.endpoint_secret_key` is fetched fresh on every `plan`/`apply` this ephemeral resource appears in and is never written to state at all. Feed it into whatever actually consumes it via a write-only (`*_wo`) attribute, not a regular one — a write-only attribute doesn't persist to state either, regardless of where the value it receives came from. `paddle_notification_setting`'s own `endpoint_secret_key` attribute (and its data source's) still works unchanged — this is additive, not a breaking removal — but prefer the ephemeral resource in any new configuration.
+
+### List resources — bulk-discovering existing infrastructure
+
+Terraform requires `>= 1.14.0` for [`list` blocks](https://developer.hashicorp.com/terraform/language/query) and the `terraform query` command — the same floor this provider already requires for Actions above, so no separate version bump is needed.
+
+`paddle_product` supports resource identity (Terraform `>= 1.12.0`) and a matching `list` block, so you can discover every product already in the account and generate `import` blocks (or full resource config, with `include_resource = true`) for it instead of hand-writing one `paddle_product` block per existing product:
+
+```console
+$ terraform query -query-file=list-products.tfquery.hcl
+```
+
+```hcl
+# list-products.tfquery.hcl
+list "paddle_product" "all" {
+  provider = paddle
+
+  config {}
+
+  include_resource = true
+}
+```
+
+Paddle's list-products endpoint takes no filters, so `config {}` is always empty here — every product in the account comes back. The other four resources (`paddle_price`/`paddle_discount`/`paddle_discount_group`/`paddle_notification_setting`) don't have identity or list support yet; `paddle_product` is a first slice, not the full set.
 
 ### `paddle_customer` — PII in your state file
 
