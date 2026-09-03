@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/action"
@@ -12,6 +13,19 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/vivantel/terraform-provider-paddle/internal/client"
+)
+
+// adjustmentSearchRetryAttempts/adjustmentSearchRetryDelay: read-after-write
+// lag mitigation, same rationale and same numbers as
+// chargeSearchRetryAttempts/chargeSearchRetryDelay (see that const block's
+// comment) — ListAdjustments is the identical class of endpoint
+// (list/search, not a primary-key read) as the ones that produced a real
+// duplicate charge for subscription_charge, and this check had zero retry
+// protection against that same race until now. waitOrDone is shared with
+// subscription_charge, defined once in that file.
+const (
+	adjustmentSearchRetryAttempts = 4
+	adjustmentSearchRetryDelay    = 3 * time.Second
 )
 
 var _ action.Action = &AdjustmentAction{}
@@ -46,7 +60,7 @@ func (a *AdjustmentAction) Metadata(_ context.Context, req action.MetadataReques
 
 func (a *AdjustmentAction) Schema(_ context.Context, _ action.SchemaRequest, resp *action.SchemaResponse) {
 	resp.Schema = actionschema.Schema{
-		MarkdownDescription: "Creates a Paddle adjustment (refund, credit, or a chargeback-related record) against a transaction. See [Paddle API Reference](https://developer.paddle.com/api-reference/adjustments/create-adjustment). Paddle has no idempotency-key support, and adjustments have no update/delete operation once created, so this action lists existing adjustments for the same `transaction_id` and treats a match on `action`+`reason` (and `type`, if set) as already-done rather than creating a second one — best-effort correlation, not a guarantee: this check cannot distinguish a retry from a deliberately separate adjustment for the same transaction. **This moves real money or changes a real customer's balance in a live (non-sandbox) environment.** See this provider's README for operational guidance (a separate, tightly-scoped API key; not running this under `-auto-approve` without review) before using it in an automated pipeline.",
+		MarkdownDescription: "Creates a Paddle adjustment (refund, credit, or a chargeback-related record) against a transaction. See [Paddle API Reference](https://developer.paddle.com/api-reference/adjustments/create-adjustment). Paddle has no idempotency-key support, and adjustments have no update/delete operation once created, so this action lists existing adjustments for the same `transaction_id` and treats a match on `action`+`reason` (and `type`, if set) as already-done rather than creating a second one — best-effort correlation, not a guarantee: this check cannot distinguish a retry from a deliberately separate adjustment for the same transaction, and Paddle's adjustment search isn't guaranteed instant-consistent with an adjustment just created (the same class of race that produced a real duplicate charge in `paddle_subscription_charge`), so this check retries a few times with a short wait before concluding \"no match, proceed,\" which meaningfully shrinks but does not eliminate that race window. **This moves real money or changes a real customer's balance in a live (non-sandbox) environment.** See this provider's README for operational guidance (a separate, tightly-scoped API key; not running this under `-auto-approve` without review) before using it in an automated pipeline.",
 		Attributes: map[string]actionschema.Attribute{
 			"action": actionschema.StringAttribute{
 				Required:            true,
@@ -167,18 +181,32 @@ func (a *AdjustmentAction) Invoke(ctx context.Context, req action.InvokeRequest,
 		wantType = config.Type.ValueString()
 	}
 
-	existing, err := a.client.ListAdjustments(ctx, config.TransactionID.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError("Error searching existing Paddle adjustments", client.FriendlyErrorMessage(err))
-		return
-	}
-	if match := findMatchingAdjustment(existing, wantAction, wantReason, wantType); match != nil {
-		if resp.SendProgress != nil {
-			resp.SendProgress(action.InvokeProgressEvent{
-				Message: fmt.Sprintf("An adjustment matching this action+reason already exists for %s (%s, status=%s) — not creating a duplicate.", config.TransactionID.ValueString(), match.ID, match.Status),
-			})
+	transactionID := config.TransactionID.ValueString()
+	for attempt := 1; attempt <= adjustmentSearchRetryAttempts; attempt++ {
+		existing, err := a.client.ListAdjustments(ctx, transactionID)
+		if err != nil {
+			resp.Diagnostics.AddError("Error searching existing Paddle adjustments", client.FriendlyErrorMessage(err))
+			return
 		}
-		return
+		if match := findMatchingAdjustment(existing, wantAction, wantReason, wantType); match != nil {
+			if resp.SendProgress != nil {
+				resp.SendProgress(action.InvokeProgressEvent{
+					Message: fmt.Sprintf("An adjustment matching this action+reason already exists for %s (%s, status=%s) — not creating a duplicate.", transactionID, match.ID, match.Status),
+				})
+			}
+			return
+		}
+		if attempt < adjustmentSearchRetryAttempts {
+			if resp.SendProgress != nil {
+				resp.SendProgress(action.InvokeProgressEvent{
+					Message: fmt.Sprintf("No matching existing adjustment found on attempt %d/%d — waiting before retrying, in case Paddle's adjustment search hasn't caught up with a very recent adjustment yet.", attempt, adjustmentSearchRetryAttempts),
+				})
+			}
+			if !waitOrDone(ctx, adjustmentSearchRetryDelay) {
+				resp.Diagnostics.AddError("Timed out waiting to search existing Paddle adjustments", "The context was canceled or expired while retrying the duplicate-adjustment check. Not proceeding to create an adjustment — verify manually before retrying this action.")
+				return
+			}
+		}
 	}
 
 	created, err := a.client.CreateAdjustment(ctx, toAPIAdjustment(config))
@@ -200,7 +228,7 @@ func (a *AdjustmentAction) Invoke(ctx context.Context, req action.InvokeRequest,
 
 	if resp.SendProgress != nil {
 		resp.SendProgress(action.InvokeProgressEvent{
-			Message: fmt.Sprintf("Created Paddle adjustment %s (status=%s) for transaction %s.", created.ID, created.Status, config.TransactionID.ValueString()),
+			Message: fmt.Sprintf("Created Paddle adjustment %s (status=%s) for transaction %s.", created.ID, created.Status, transactionID),
 		})
 	}
 }
