@@ -58,7 +58,7 @@ func (d *NotificationsDataSource) Schema(_ context.Context, _ datasource.SchemaR
 			"one notification's delivery logs cheaply, doing that for every result here would be an " +
 			"N+1 API call per match; look up a notification's `id` here, then feed it into " +
 			"`paddle_notification` (singular) to get `logs`. See " +
-			"https://developer.paddle.com/api-reference/notifications/overview.\n\n" +
+			"[Paddle API Reference](https://developer.paddle.com/api-reference/notifications/overview).\n\n" +
 			"**⚠️ An unfiltered (or loosely filtered) call to this data source lists every matching " +
 			"notification in the account, one API call per page of results — a real cost against a large " +
 			"account, and a large `notifications` list written into your Terraform state file on every " +
@@ -66,7 +66,7 @@ func (d *NotificationsDataSource) Schema(_ context.Context, _ datasource.SchemaR
 		Attributes: map[string]schema.Attribute{
 			"notification_setting_id": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Filter by the owning notification destination's ID (`ntfset_...`). Leave unset to match notifications for any destination.",
+				MarkdownDescription: "Filter by the owning notification destination's ID (prefix `ntfset_...`). Leave unset to match notifications for any destination.",
 			},
 			"status": schema.StringAttribute{
 				Optional: true,
@@ -80,13 +80,13 @@ func (d *NotificationsDataSource) Schema(_ context.Context, _ datasource.SchemaR
 				MarkdownDescription: "Matching notifications (without `logs` — see above).",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"id":                      schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle notification ID (`ntf_...`)."},
-						"notification_setting_id": schema.StringAttribute{Computed: true},
-						"status":                  schema.StringAttribute{Computed: true},
+						"id":                      schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle notification ID (prefix `ntf_...`)."},
+						"notification_setting_id": schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle notification setting ID (prefix `ntfset_...`) that received this notification."},
+						"status":                  schema.StringAttribute{Computed: true, MarkdownDescription: "One of `not_attempted`, `needs_retry`, `delivered`, `failed`."},
 						"type":                    schema.StringAttribute{Computed: true, MarkdownDescription: "Event type this notification carries, in `entity.event_type` format."},
-						"occurred_at":             schema.StringAttribute{Computed: true},
+						"occurred_at":             schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time Paddle recorded for this notification."},
 						"delivered_at":            schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time this notification was delivered, or `null` if not yet delivered."},
-						"times_attempted":         schema.Int64Attribute{Computed: true},
+						"times_attempted":         schema.Int64Attribute{Computed: true, MarkdownDescription: "Number of delivery attempts Paddle has recorded for this notification."},
 					},
 				},
 			},

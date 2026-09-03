@@ -60,7 +60,7 @@ func (d *NotificationDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			"`paddle_notification_setting` resource, which only configures *where* to deliver, not what " +
 			"was actually delivered or whether it succeeded. `logs` surfaces the actual HTTP response code " +
 			"and body Paddle recorded for each delivery attempt. See " +
-			"https://developer.paddle.com/api-reference/notifications/overview. If `id` is set, every " +
+			"[Paddle API Reference](https://developer.paddle.com/api-reference/notifications/overview). If `id` is set, every " +
 			"other filter is ignored and that notification is fetched directly. Otherwise, filters are " +
 			"applied server-side and exactly one notification must match — zero or more than one match is " +
 			"an error, not a silent first-result pick.",
@@ -68,12 +68,12 @@ func (d *NotificationDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			"id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Paddle notification ID (`ntf_...`) to look up directly. Leave unset to look up by the other filters instead.",
+				MarkdownDescription: "Paddle notification ID (prefix `ntf_...`) to look up directly. Leave unset to look up by the other filters instead.",
 			},
 			"notification_setting_id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Filter by the owning notification destination's ID (`ntfset_...`). Ignored if `id` is set.",
+				MarkdownDescription: "Filter by the owning notification destination's ID (prefix `ntfset_...`). Ignored if `id` is set.",
 			},
 			"status": schema.StringAttribute{
 				Optional: true,
@@ -87,21 +87,21 @@ func (d *NotificationDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 				Computed:            true,
 				MarkdownDescription: "Event type this notification carries, in `entity.event_type` format.",
 			},
-			"occurred_at": schema.StringAttribute{Computed: true},
+			"occurred_at": schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time Paddle recorded for this notification."},
 			"delivered_at": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "RFC 3339 date-time this notification was delivered, or `null` if not yet delivered.",
 			},
-			"times_attempted": schema.Int64Attribute{Computed: true},
+			"times_attempted": schema.Int64Attribute{Computed: true, MarkdownDescription: "Number of delivery attempts Paddle has recorded for this notification."},
 			"logs": schema.ListNestedAttribute{
 				Computed:            true,
 				MarkdownDescription: "Every delivery attempt Paddle recorded for this notification.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"id":                    schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle notification log ID (`ntflog_...`)."},
+						"id":                    schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle notification log ID (prefix `ntflog_...`)."},
 						"response_code":         schema.Int64Attribute{Computed: true, MarkdownDescription: "HTTP status code the receiving server returned."},
-						"response_content_type": schema.StringAttribute{Computed: true},
-						"response_body":         schema.StringAttribute{Computed: true},
+						"response_content_type": schema.StringAttribute{Computed: true, MarkdownDescription: "Content type of the receiving server's response."},
+						"response_body":         schema.StringAttribute{Computed: true, MarkdownDescription: "Body of the receiving server's response."},
 						"attempted_at":          schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time Paddle attempted this delivery."},
 					},
 				},

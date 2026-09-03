@@ -59,7 +59,7 @@ func (d *TransactionsDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			"`line_items` — unlike the singular data source, which re-fetches each match by ID to get it, " +
 			"doing that for every result here would be an N+1 API call per match; look up a transaction's " +
 			"`id` here, then feed it into `paddle_transaction` (singular) to get `line_items` for " +
-			"`paddle_adjustment`. See https://developer.paddle.com/api-reference/transactions/overview.\n\n" +
+			"`paddle_adjustment`. See [Paddle API Reference](https://developer.paddle.com/api-reference/transactions/overview).\n\n" +
 			"**⚠️ An unfiltered (or loosely filtered) call to this data source lists every matching " +
 			"transaction in the account, one API call per page of results — a real cost against a large " +
 			"account, and a large `transactions` list written into your Terraform state file on every " +
@@ -67,11 +67,11 @@ func (d *TransactionsDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 		Attributes: map[string]schema.Attribute{
 			"subscription_id": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Filter by the owning subscription's ID (`sub_...`). Leave unset to match transactions for any subscription.",
+				MarkdownDescription: "Filter by the owning subscription's ID (prefix `sub_...`). Leave unset to match transactions for any subscription.",
 			},
 			"customer_id": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Filter by the owning customer's ID (`ctm_...`). Leave unset to match transactions for any customer.",
+				MarkdownDescription: "Filter by the owning customer's ID (prefix `ctm_...`). Leave unset to match transactions for any customer.",
 			},
 			"status": schema.StringAttribute{
 				Optional: true,
@@ -85,11 +85,11 @@ func (d *TransactionsDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 				MarkdownDescription: "Matching transactions (without `line_items` — see above).",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"id":              schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle transaction ID (`txn_...`)."},
-						"subscription_id": schema.StringAttribute{Computed: true},
-						"customer_id":     schema.StringAttribute{Computed: true},
-						"status":          schema.StringAttribute{Computed: true},
-						"origin":          schema.StringAttribute{Computed: true},
+						"id":              schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle transaction ID (prefix `txn_...`)."},
+						"subscription_id": schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle subscription ID (prefix `sub_...`) owning this transaction."},
+						"customer_id":     schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle customer ID (prefix `ctm_...`) owning this transaction."},
+						"status":          schema.StringAttribute{Computed: true, MarkdownDescription: "One of `draft`, `ready`, `billed`, `paid`, `completed`, `canceled`, `past_due`."},
+						"origin":          schema.StringAttribute{Computed: true, MarkdownDescription: "How this transaction was created (e.g., `subscription_charge`, `subscription_recurring`, `web`, `api`)."},
 					},
 				},
 			},

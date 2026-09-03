@@ -77,30 +77,30 @@ func (r *PriceResource) Metadata(_ context.Context, req resource.MetadataRequest
 
 func (r *PriceResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A Paddle price — see https://developer.paddle.com/api-reference/prices/overview. Paddle has no hard delete for prices; `terraform destroy` archives it instead (status becomes `archived`).",
+		MarkdownDescription: "A Paddle price defines a specific amount and billing cadence attached to a product. See [Paddle API Reference](https://developer.paddle.com/api-reference/prices/overview). Paddle has no hard delete for prices; `terraform destroy` archives the price instead (status becomes `archived`).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Paddle price ID (`pri_...`).",
+				MarkdownDescription: "Paddle price ID (prefix `pri_...`).",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"product_id": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Paddle product ID (`pro_...`) this price belongs to. Changing this replaces the price — Paddle prices aren't reparented in place.",
+				MarkdownDescription: "Paddle product ID (prefix `pro_...`) this price belongs to. Changing this replaces the price — Paddle prices are not reparented in place.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"description": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "2-500 characters. Internal only, never shown to customers.",
+				MarkdownDescription: "Internal description (2–500 characters). Never shown to customers.",
 			},
 			"name": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "1-150 characters. Customer-facing.",
+				MarkdownDescription: "Customer-facing name (1–150 characters).",
 			},
 			"tax_mode": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "`account_setting` (default), `external`, `internal`, or `location`.",
+				MarkdownDescription: "Tax mode: `account_setting` (default), `external`, `internal`, or `location`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				Validators: []validator.String{
 					stringvalidator.OneOf("account_setting", "external", "internal", "location"),
@@ -108,7 +108,7 @@ func (r *PriceResource) Schema(ctx context.Context, _ resource.SchemaRequest, re
 			},
 			"status": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "`active` or `archived`.",
+				MarkdownDescription: "Price status: `active` or `archived`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"unit_price": schema.SingleNestedAttribute{
@@ -116,31 +116,32 @@ func (r *PriceResource) Schema(ctx context.Context, _ resource.SchemaRequest, re
 				Attributes: map[string]schema.Attribute{
 					"amount": schema.StringAttribute{
 						Required:            true,
-						MarkdownDescription: "Lowest denomination as a string, e.g. \"1000\" = $10.00 for a 2-decimal currency.",
+						MarkdownDescription: "Amount in the lowest denomination as a string (e.g., \"1000\" = $10.00 for a 2-decimal currency).",
 					},
 					"currency_code": schema.StringAttribute{
 						Required:            true,
-						MarkdownDescription: "ISO 4217 code, e.g. USD.",
+						MarkdownDescription: "ISO 4217 currency code (e.g., USD).",
 					},
 				},
 			},
 			"billing_cycle": schema.SingleNestedAttribute{
 				Optional:            true,
-				MarkdownDescription: "Omit for a one-time price.",
+				MarkdownDescription: "Billing cycle for recurring prices. Omit for a one-time price.",
 				Attributes: map[string]schema.Attribute{
 					"interval": schema.StringAttribute{
 						Required:            true,
-						MarkdownDescription: "day, week, month, or year.",
+						MarkdownDescription: "Interval unit: `day`, `week`, `month`, or `year`.",
 					},
 					"frequency": schema.Int64Attribute{
-						Required: true,
+						Required:            true,
+						MarkdownDescription: "Number of intervals between each billing (e.g., `interval = \"month\"` + `frequency = 1` is monthly; `interval = \"week\"` + `frequency = 2` is bi-weekly).",
 					},
 				},
 			},
 			"quantity": schema.SingleNestedAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Defaults to 1-100 if omitted.",
+				MarkdownDescription: "Quantity bounds. Defaults to minimum 1, maximum 100 if omitted.",
 				PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
 				// Required so this is never Unknown on Create: an
 				// Optional+Computed nested attribute with nothing in
@@ -164,20 +165,17 @@ func (r *PriceResource) Schema(ctx context.Context, _ resource.SchemaRequest, re
 				)),
 				Attributes: map[string]schema.Attribute{
 					"minimum": schema.Int64Attribute{
-						Required: true,
+						Required:            true,
+						MarkdownDescription: "Minimum quantity per order. Defaults to `1` if the whole `quantity` block is omitted.",
 					},
 					"maximum": schema.Int64Attribute{
-						Required: true,
+						Required:            true,
+						MarkdownDescription: "Maximum quantity per order. Defaults to `100` if the whole `quantity` block is omitted.",
 					},
 				},
 			},
 			"custom_data": customDataAttribute(),
-			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
-				Create: true,
-				Read:   true,
-				Update: true,
-				Delete: true,
-			}),
+			"timeouts":    describedTimeouts(ctx),
 		},
 	}
 }

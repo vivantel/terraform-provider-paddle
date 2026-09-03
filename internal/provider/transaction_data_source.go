@@ -54,7 +54,7 @@ func (d *TransactionDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 			"`item_id`, and `item_id` in particular lives three JSON shapes deep in Paddle's raw API " +
 			"(see `internal/client/lineitem.go`'s doc comment). `line_items` here surfaces exactly the " +
 			"`item_id`/`price_id` pairs `paddle_adjustment`'s config can be built from directly. See " +
-			"https://developer.paddle.com/api-reference/transactions/overview. If `id` is set, every " +
+			"[Paddle API Reference](https://developer.paddle.com/api-reference/transactions/overview). If `id` is set, every " +
 			"other filter is ignored and that transaction is fetched directly. Otherwise, filters are " +
 			"applied server-side and exactly one transaction must match — zero or more than one match " +
 			"is an error, not a silent first-result pick.",
@@ -62,17 +62,17 @@ func (d *TransactionDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 			"id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Paddle transaction ID (`txn_...`) to look up directly. Leave unset to look up by the other filters instead.",
+				MarkdownDescription: "Paddle transaction ID (prefix `txn_...`) to look up directly. Leave unset to look up by the other filters instead.",
 			},
 			"subscription_id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Filter by the owning subscription's ID (`sub_...`). Ignored if `id` is set.",
+				MarkdownDescription: "Filter by the owning subscription's ID (prefix `sub_...`). Ignored if `id` is set.",
 			},
 			"customer_id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Filter by the owning customer's ID (`ctm_...`). Ignored if `id` is set.",
+				MarkdownDescription: "Filter by the owning customer's ID (prefix `ctm_...`). Ignored if `id` is set.",
 			},
 			"status": schema.StringAttribute{
 				Optional: true,
@@ -84,7 +84,7 @@ func (d *TransactionDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 			},
 			"origin": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "How this transaction was created, e.g. `subscription_charge`, `subscription_recurring`, `web`, `api`.",
+				MarkdownDescription: "How this transaction was created (e.g., `subscription_charge`, `subscription_recurring`, `web`, `api`).",
 			},
 			"line_items": schema.ListNestedAttribute{
 				Computed: true,
@@ -93,9 +93,9 @@ func (d *TransactionDataSource) Schema(_ context.Context, _ datasource.SchemaReq
 					"field) — `item_id` here is the exact value `paddle_adjustment`'s `item_id` config expects.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"item_id":  schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle transaction item ID (`txnitm_...`)."},
-						"price_id": schema.StringAttribute{Computed: true},
-						"quantity": schema.Int64Attribute{Computed: true},
+						"item_id":  schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle transaction item ID (prefix `txnitm_...`)."},
+						"price_id": schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle price ID (prefix `pri_...`) for this line item."},
+						"quantity": schema.Int64Attribute{Computed: true, MarkdownDescription: "Quantity of this line item."},
 					},
 				},
 			},

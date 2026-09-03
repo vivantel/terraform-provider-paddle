@@ -46,55 +46,45 @@ func (a *AdjustmentAction) Metadata(_ context.Context, req action.MetadataReques
 
 func (a *AdjustmentAction) Schema(_ context.Context, _ action.SchemaRequest, resp *action.SchemaResponse) {
 	resp.Schema = actionschema.Schema{
-		MarkdownDescription: "Creates a Paddle adjustment (refund, credit, or a chargeback-related record) against a transaction — " +
-			"see https://developer.paddle.com/api-reference/adjustments/create-adjustment. Paddle has no idempotency-key support, " +
-			"and adjustments have no update/delete operation once created, so this action lists existing adjustments for the same " +
-			"`transaction_id` and treats a match on `action`+`reason` (and `type`, if set) as already-done rather than creating a " +
-			"second one — best-effort correlation, not a guarantee (docs/guardrails/money-moving-actions-no-blanket-retry.md). " +
-			"**This moves real money or changes a real customer's balance in a live (non-sandbox) environment.** See this provider's " +
-			"README for operational guidance (a separate, tightly-scoped API key; not running this under `-auto-approve` without " +
-			"review) before using it in an automated pipeline.",
+		MarkdownDescription: "Creates a Paddle adjustment (refund, credit, or a chargeback-related record) against a transaction. See [Paddle API Reference](https://developer.paddle.com/api-reference/adjustments/create-adjustment). Paddle has no idempotency-key support, and adjustments have no update/delete operation once created, so this action lists existing adjustments for the same `transaction_id` and treats a match on `action`+`reason` (and `type`, if set) as already-done rather than creating a second one — best-effort correlation, not a guarantee: this check cannot distinguish a retry from a deliberately separate adjustment for the same transaction. **This moves real money or changes a real customer's balance in a live (non-sandbox) environment.** See this provider's README for operational guidance (a separate, tightly-scoped API key; not running this under `-auto-approve` without review) before using it in an automated pipeline.",
 		Attributes: map[string]actionschema.Attribute{
 			"action": actionschema.StringAttribute{
-				Required: true,
-				MarkdownDescription: "One of `credit`, `refund`, `chargeback`, `chargeback_reverse`, `chargeback_warning`, " +
-					"`chargeback_warning_reverse`, `credit_reverse` — the full enum Paddle's API accepts.",
+				Required:            true,
+				MarkdownDescription: "Adjustment action: one of `credit`, `refund`, `chargeback`, `chargeback_reverse`, `chargeback_warning`, `chargeback_warning_reverse`, `credit_reverse` — the full enum Paddle's API accepts.",
 				Validators: []validator.String{
 					stringvalidator.OneOf("credit", "refund", "chargeback", "chargeback_reverse", "chargeback_warning", "chargeback_warning_reverse", "credit_reverse"),
 				},
 			},
 			"type": actionschema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "`full` or `partial`. Paddle defaults to `partial` server-side if omitted — left unset here rather than defaulted client-side, since actions have no state to reconcile a client-side default against.",
+				MarkdownDescription: "Adjustment type: `full` or `partial`. Paddle defaults to `partial` server-side if omitted — left unset here rather than defaulted client-side, since actions have no state to reconcile a client-side default against.",
 				Validators:          []validator.String{stringvalidator.OneOf("full", "partial")},
 			},
 			"tax_mode": actionschema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "`internal` or `external`. Only meaningful for partial adjustments.",
+				MarkdownDescription: "Tax mode: `internal` or `external`. Only meaningful for partial adjustments.",
 				Validators:          []validator.String{stringvalidator.OneOf("internal", "external")},
 			},
 			"transaction_id": actionschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "The transaction being adjusted (`txn_...`). Must be completed (auto-collected), or billed/past_due (manually-collected).",
+				MarkdownDescription: "The transaction being adjusted (prefix `txn_...`). Must be completed (auto-collected), or billed/past_due (manually-collected).",
 			},
 			"reason": actionschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Why this adjustment is being made. Also used, best-effort, to detect whether an equivalent adjustment already exists — see this action's own top-level description.",
+				MarkdownDescription: "Why this adjustment is being made. Also used, best-effort, to detect whether an equivalent adjustment already exists — see this action's top-level description.",
 			},
 			"items": actionschema.ListNestedAttribute{
-				Optional: true,
-				MarkdownDescription: "Line items to adjust. Required by Paddle's API when `type` is `partial` — not cross-field-validated " +
-					"here, Paddle's own API error is authoritative (same default this provider already applies to " +
-					"`paddle_discount`'s `discount_group_id`).",
+				Optional:            true,
+				MarkdownDescription: "Line items to adjust. Required by Paddle's API when `type` is `partial` — not cross-field-validated here, Paddle's own API error is authoritative (same default this provider already applies to `paddle_discount`'s `discount_group_id`).",
 				NestedObject: actionschema.NestedAttributeObject{
 					Attributes: map[string]actionschema.Attribute{
 						"item_id": actionschema.StringAttribute{
 							Required:            true,
-							MarkdownDescription: "The transaction line item being adjusted (`txnitm_...`).",
+							MarkdownDescription: "The transaction line item being adjusted (prefix `txnitm_...`).",
 						},
 						"type": actionschema.StringAttribute{
 							Required:            true,
-							MarkdownDescription: "`full`, `partial`, `tax`, or `proration`.",
+							MarkdownDescription: "Item adjustment type: `full`, `partial`, `tax`, or `proration`.",
 							Validators:          []validator.String{stringvalidator.OneOf("full", "partial", "tax", "proration")},
 						},
 						"amount": actionschema.StringAttribute{

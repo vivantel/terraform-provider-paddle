@@ -70,52 +70,45 @@ func (r *DiscountResource) Metadata(_ context.Context, req resource.MetadataRequ
 
 func (r *DiscountResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A Paddle discount — see https://developer.paddle.com/api-reference/discounts/overview. " +
-			"Paddle has no delete operation for discounts at all; `terraform destroy` sets `status = \"archived\"` " +
-			"via a normal update, the same as `paddle_product`/`paddle_price` archive on destroy (though those two " +
-			"have an actual archive semantic — discounts genuinely have no other removal path per Paddle's docs).",
+		MarkdownDescription: "A Paddle discount is a percentage, flat, or per-seat reduction applied at checkout. See [Paddle API Reference](https://developer.paddle.com/api-reference/discounts/overview). Paddle has no delete operation for discounts; `terraform destroy` sets `status = \"archived\"` via a normal update, the same pattern `paddle_product`/`paddle_price` use for their archive-on-destroy behavior.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Paddle discount ID (`dsc_...`).",
+				MarkdownDescription: "Paddle discount ID (prefix `dsc_...`).",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"description": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "1-500 characters. Internal only, never shown to customers.",
+				MarkdownDescription: "Internal description (1–500 characters). Never shown to customers.",
 			},
 			"type": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "`flat`, `flat_per_seat`, or `percentage`.",
+				MarkdownDescription: "Discount type: `flat`, `flat_per_seat`, or `percentage`.",
 				Validators: []validator.String{
 					stringvalidator.OneOf("flat", "flat_per_seat", "percentage"),
 				},
 			},
 			"amount": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "\"0.01\"-\"100\" for `percentage`; lowest currency denomination for `flat`/`flat_per_seat` (e.g. \"1000\" = $10.00 for a 2-decimal currency).",
+				MarkdownDescription: "Amount: `\"0.01\"`–`\"100\"` for `percentage`; lowest currency denomination for `flat`/`flat_per_seat` (e.g., `\"1000\"` = $10.00 for a 2-decimal currency).",
 			},
 			"code": schema.StringAttribute{
-				Optional: true,
-				Computed: true,
-				MarkdownDescription: "1-32 alphanumeric characters, case-insensitive. Optional+Computed, not " +
-					"purely user-set: confirmed against the real sandbox that Paddle auto-generates a code " +
-					"when this is omitted (e.g. \"3268E6WW3W\") rather than leaving it null, so modeling this " +
-					"as Optional-only produced \"Provider produced inconsistent result after apply\" on the " +
-					"very first real Create.",
-				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+				Optional:            true,
+				Computed:            true,
+				MarkdownDescription: "Discount code (1–32 alphanumeric characters, case-insensitive). Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle auto-generates a code when this is omitted (e.g., `\"3268E6WW3W\"`) rather than leaving it null, so modeling this as Optional-only produced \"Provider produced inconsistent result after apply\" on the very first real Create.",
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"enabled_for_checkout": schema.BoolAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Defaults to `true`.",
+				MarkdownDescription: "Whether the discount is enabled for checkout. Defaults to `true`.",
 				Default:             booldefault.StaticBool(true),
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"mode": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "`standard` or `custom`. Defaults to `standard`.",
+				MarkdownDescription: "Discount mode: `standard` or `custom`. Defaults to `standard`.",
 				Default:             stringdefault.StaticString("standard"),
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				Validators: []validator.String{
@@ -124,7 +117,7 @@ func (r *DiscountResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 			},
 			"currency_code": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "ISO 4217 code. Required by Paddle's API when `type` is `flat` or `flat_per_seat`; not accepted for `percentage` — the API enforces this, not this schema.",
+				MarkdownDescription: "ISO 4217 currency code. Required by Paddle's API when `type` is `flat` or `flat_per_seat`; not accepted for `percentage`.",
 			},
 			"recur": schema.BoolAttribute{
 				Optional:            true,
@@ -135,28 +128,28 @@ func (r *DiscountResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 			},
 			"maximum_recurring_intervals": schema.Int64Attribute{
 				Optional:            true,
-				MarkdownDescription: "Minimum 1. Requires `recur = true` — the API enforces this, not this schema. Omit (or set null) for no limit.",
+				MarkdownDescription: "Minimum 1. Requires `recur = true` (enforced by the API). Omit for no limit.",
 			},
 			"usage_limit": schema.Int64Attribute{
 				Optional:            true,
-				MarkdownDescription: "Minimum 1. Omit (or set null) for unlimited redemptions.",
+				MarkdownDescription: "Minimum 1. Omit for unlimited redemptions.",
 			},
 			"restrict_to": schema.ListAttribute{
 				Optional:            true,
 				ElementType:         types.StringType,
-				MarkdownDescription: "Product or price IDs this discount is restricted to. Omit (or set null) to apply to the whole catalog.",
+				MarkdownDescription: "Product or price IDs this discount is restricted to. Omit to apply to the whole catalog.",
 			},
 			"expires_at": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "RFC 3339 date-time. Omit (or set null) for a discount that never expires.",
+				MarkdownDescription: "RFC 3339 date-time. Omit for a discount that never expires.",
 			},
 			"discount_group_id": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Paddle discount group ID (`dsg_...`), if this discount belongs to one. A discount belongs to at most one group.",
+				MarkdownDescription: "Paddle discount group ID (prefix `dsg_...`), if this discount belongs to one. A discount belongs to at most one group.",
 			},
 			"status": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "`active` or `archived`.",
+				MarkdownDescription: "Discount status: `active` or `archived`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"times_used": schema.Int64Attribute{
@@ -170,15 +163,10 @@ func (r *DiscountResource) Schema(ctx context.Context, _ resource.SchemaRequest,
 			},
 			"updated_at": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "RFC 3339 date-time this discount was last updated, set by Paddle. Deliberately has no UseStateForUnknown — it genuinely changes on every update, so it should show as \"known after apply\" whenever anything else changes.",
+				MarkdownDescription: "RFC 3339 date-time this discount was last updated, set by Paddle. Deliberately has no UseStateForUnknown — it genuinely changes on every update, so it shows as \"known after apply\" whenever anything else changes.",
 			},
 			"custom_data": customDataAttribute(),
-			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
-				Create: true,
-				Read:   true,
-				Update: true,
-				Delete: true,
-			}),
+			"timeouts":    describedTimeouts(ctx),
 		},
 	}
 }

@@ -26,19 +26,19 @@ func (d *ProductDataSource) Metadata(_ context.Context, req datasource.MetadataR
 
 func (d *ProductDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Look up an existing Paddle product by ID — see https://developer.paddle.com/api-reference/products/overview.",
+		MarkdownDescription: "Look up an existing Paddle product by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/products/overview).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Paddle product ID (`pro_...`) to look up.",
+				MarkdownDescription: "Paddle product ID (prefix `pro_...`) to look up.",
 			},
-			"name":         schema.StringAttribute{Computed: true},
-			"tax_category": schema.StringAttribute{Computed: true},
-			"description":  schema.StringAttribute{Computed: true},
-			"type":         schema.StringAttribute{Computed: true},
-			"image_url":    schema.StringAttribute{Computed: true},
-			"status":       schema.StringAttribute{Computed: true},
-			"custom_data":  schema.StringAttribute{Computed: true},
+			"name":         schema.StringAttribute{Computed: true, MarkdownDescription: "Customer-facing product name."},
+			"tax_category": schema.StringAttribute{Computed: true, MarkdownDescription: "Tax category: one of `digital-goods`, `ebooks`, `implementation-services`, `professional-services`, `saas`, `software-programming-services`, `standard`, `training-services`, `website-hosting`."},
+			"description":  schema.StringAttribute{Computed: true, MarkdownDescription: "Internal product description (1–200 characters)."},
+			"type":         schema.StringAttribute{Computed: true, MarkdownDescription: "Product type: `standard` or `custom`."},
+			"image_url":    schema.StringAttribute{Computed: true, MarkdownDescription: "Product image URL, if set."},
+			"status":       schema.StringAttribute{Computed: true, MarkdownDescription: "Product status: `active` or `archived`."},
+			"custom_data":  schema.StringAttribute{Computed: true, MarkdownDescription: "Arbitrary key-value metadata attached to this product."},
 		},
 	}
 }

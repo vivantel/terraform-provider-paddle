@@ -27,23 +27,24 @@ func (d *NotificationSettingDataSource) Metadata(_ context.Context, req datasour
 
 func (d *NotificationSettingDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Look up an existing Paddle notification setting by ID — see https://developer.paddle.com/api-reference/notification-settings/overview.",
+		MarkdownDescription: "Look up an existing Paddle notification setting by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/notification-settings/overview).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Paddle notification setting ID (`ntfset_...`) to look up.",
+				MarkdownDescription: "Paddle notification setting ID (prefix `ntfset_...`) to look up.",
 			},
-			"description": schema.StringAttribute{Computed: true},
-			"type":        schema.StringAttribute{Computed: true},
-			"destination": schema.StringAttribute{Computed: true},
-			"active":      schema.BoolAttribute{Computed: true},
+			"description": schema.StringAttribute{Computed: true, MarkdownDescription: "Notification setting description (1–500 characters)."},
+			"type":        schema.StringAttribute{Computed: true, MarkdownDescription: "Notification type: `email` or `url`."},
+			"destination": schema.StringAttribute{Computed: true, MarkdownDescription: "Webhook URL or email address."},
+			"active":      schema.BoolAttribute{Computed: true, MarkdownDescription: "Whether Paddle tries to deliver events to this destination."},
 			"subscribed_events": schema.ListAttribute{
-				Computed:    true,
-				ElementType: types.StringType,
+				Computed:            true,
+				ElementType:         types.StringType,
+				MarkdownDescription: "Event type names this destination subscribes to (e.g., `transaction.billed`).",
 			},
-			"api_version":              schema.Int64Attribute{Computed: true},
-			"include_sensitive_fields": schema.BoolAttribute{Computed: true},
-			"traffic_source":           schema.StringAttribute{Computed: true},
+			"api_version":              schema.Int64Attribute{Computed: true, MarkdownDescription: "API version used for event payloads sent to this destination."},
+			"include_sensitive_fields": schema.BoolAttribute{Computed: true, MarkdownDescription: "Whether sensitive fields are included in event payloads."},
+			"traffic_source":           schema.StringAttribute{Computed: true, MarkdownDescription: "Traffic source: `platform`, `simulation`, or `all`."},
 			"endpoint_secret_key": schema.StringAttribute{
 				Computed:            true,
 				Sensitive:           true,

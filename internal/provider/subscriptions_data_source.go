@@ -37,7 +37,7 @@ func (d *SubscriptionsDataSource) Schema(_ context.Context, _ datasource.SchemaR
 		MarkdownDescription: "List every Paddle subscription matching `customer_id`/`status` filters — " +
 			"the plural companion to `paddle_subscription` (which requires exactly one match). Leave both " +
 			"filters unset to list every subscription in the account. See " +
-			"https://developer.paddle.com/api-reference/subscriptions/overview.\n\n" +
+			"[Paddle API Reference](https://developer.paddle.com/api-reference/subscriptions/overview).\n\n" +
 			"**⚠️ An unfiltered (or loosely filtered) call to this data source lists every matching " +
 			"subscription in the account, one API call per page of results — a real cost against a large " +
 			"account, and a large `subscriptions` list written into your Terraform state file on every " +
@@ -45,7 +45,7 @@ func (d *SubscriptionsDataSource) Schema(_ context.Context, _ datasource.SchemaR
 		Attributes: map[string]schema.Attribute{
 			"customer_id": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Filter by the owning customer's ID (`ctm_...`). Leave unset to match subscriptions for any customer.",
+				MarkdownDescription: "Filter by the owning customer's ID (prefix `ctm_...`). Leave unset to match subscriptions for any customer.",
 			},
 			"status": schema.StringAttribute{
 				Optional: true,
@@ -59,13 +59,13 @@ func (d *SubscriptionsDataSource) Schema(_ context.Context, _ datasource.SchemaR
 				MarkdownDescription: "Matching subscriptions.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"id":             schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle subscription ID (`sub_...`)."},
-						"customer_id":    schema.StringAttribute{Computed: true},
-						"status":         schema.StringAttribute{Computed: true},
-						"currency_code":  schema.StringAttribute{Computed: true},
+						"id":             schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle subscription ID (prefix `sub_...`)."},
+						"customer_id":    schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle customer ID (prefix `ctm_...`) owning this subscription."},
+						"status":         schema.StringAttribute{Computed: true, MarkdownDescription: "One of `active`, `canceled`, `past_due`, `paused`, `trialing`."},
+						"currency_code":  schema.StringAttribute{Computed: true, MarkdownDescription: "ISO 4217 code for this subscription's primary currency."},
 						"next_billed_at": schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time of the next scheduled billing, or `null` if there isn't one."},
-						"created_at":     schema.StringAttribute{Computed: true},
-						"updated_at":     schema.StringAttribute{Computed: true},
+						"created_at":     schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time this subscription was created, set by Paddle."},
+						"updated_at":     schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time this subscription was last updated, set by Paddle."},
 					},
 				},
 			},

@@ -73,38 +73,25 @@ func (a *SubscriptionChargeAction) Metadata(_ context.Context, req action.Metada
 
 func (a *SubscriptionChargeAction) Schema(_ context.Context, _ action.SchemaRequest, resp *action.SchemaResponse) {
 	resp.Schema = actionschema.Schema{
-		MarkdownDescription: "Creates a one-time charge against a Paddle subscription — see https://developer.paddle.com/api-reference/subscriptions/create-subscription-charge. " +
-			"**Catalog prices only** (`price_id` + `quantity`) — Paddle's API also accepts two inline non-catalog item shapes " +
-			"(an ad hoc price against an existing product, or a fully inline product+price); those aren't supported by this " +
-			"action yet, deliberately scoped out rather than half-modeled (docs/plans/paddle-provider-v3.md Step 2). Before " +
-			"charging, checks whether an equivalent charge already exists and treats a match as already-done — best-effort, " +
-			"**not a guarantee**: two deliberate, genuinely separate charges for the identical items would look identical to " +
-			"this check too, and neither of Paddle's own search mechanisms (list-transactions, the next-renewal preview) is " +
-			"guaranteed instant-consistent with a charge just created — confirmed the hard way, 2026-08-11, with a real " +
-			"duplicate charge created seconds after the first during testing. This check now retries a few times with a " +
-			"short wait before concluding \"no match, proceed\", which meaningfully shrinks but does not eliminate that " +
-			"race window (docs/guardrails/money-moving-actions-no-blanket-retry.md). The check itself differs by " +
-			"`effective_from`: an `immediately` charge is checked by searching transactions; a `next_billing_period` charge " +
-			"is checked against the subscription's next-renewal preview instead, since Paddle creates no queryable " +
-			"transaction for it until the subscription actually renews.",
+		MarkdownDescription: "Creates a one-time charge against a Paddle subscription. See [Paddle API Reference](https://developer.paddle.com/api-reference/subscriptions/create-subscription-charge). **Catalog prices only** (`price_id` + `quantity`) — Paddle's API also accepts two inline non-catalog item shapes (an ad hoc price against an existing product, or a fully inline product+price); those aren't supported by this action yet, deliberately scoped out rather than half-modeled. Before charging, checks whether an equivalent charge already exists and treats a match as already-done — best-effort, **not a guarantee**: two deliberate, genuinely separate charges for the identical items would look identical to this check too, and neither of Paddle's own search mechanisms (list-transactions, the next-renewal preview) is guaranteed instant-consistent with a charge just created — confirmed the hard way with a real duplicate charge created seconds after the first during testing. This check now retries a few times with a short wait before concluding \"no match, proceed\", which meaningfully shrinks but does not eliminate that race window. The check itself differs by `effective_from`: an `immediately` charge is checked by searching transactions; a `next_billing_period` charge is checked against the subscription's next-renewal preview instead, since Paddle creates no queryable transaction for it until the subscription actually renews.",
 		Attributes: map[string]actionschema.Attribute{
 			"subscription_id": actionschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "The subscription to charge (`sub_...`).",
+				MarkdownDescription: "The subscription to charge (prefix `sub_...`).",
 			},
 			"effective_from": actionschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "`immediately` or `next_billing_period`. Required, matching Paddle's own API (this field isn't optional there either).",
+				MarkdownDescription: "When the charge takes effect: `immediately` or `next_billing_period`. Required, matching Paddle's own API (this field isn't optional there either).",
 				Validators:          []validator.String{stringvalidator.OneOf("immediately", "next_billing_period")},
 			},
 			"items": actionschema.ListNestedAttribute{
 				Required:            true,
-				MarkdownDescription: "1-100 catalog price line items to charge.",
+				MarkdownDescription: "1–100 catalog price line items to charge.",
 				NestedObject: actionschema.NestedAttributeObject{
 					Attributes: map[string]actionschema.Attribute{
 						"price_id": actionschema.StringAttribute{
 							Required:            true,
-							MarkdownDescription: "An existing catalog price (`pri_...`) — see `paddle_price`.",
+							MarkdownDescription: "An existing catalog price (prefix `pri_...`) — see `paddle_price`.",
 						},
 						"quantity": actionschema.Int64Attribute{
 							Required:            true,
@@ -116,7 +103,7 @@ func (a *SubscriptionChargeAction) Schema(_ context.Context, _ action.SchemaRequ
 			},
 			"on_payment_failure": actionschema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "`prevent_change` or `apply_change`. Left to Paddle's own default (`prevent_change`) if omitted.",
+				MarkdownDescription: "Behavior on payment failure: `prevent_change` or `apply_change`. Left to Paddle's own default (`prevent_change`) if omitted.",
 				Validators:          []validator.String{stringvalidator.OneOf("prevent_change", "apply_change")},
 			},
 			"receipt_data": actionschema.StringAttribute{

@@ -38,21 +38,16 @@ func (a *SubscriptionPauseAction) Metadata(_ context.Context, req action.Metadat
 
 func (a *SubscriptionPauseAction) Schema(_ context.Context, _ action.SchemaRequest, resp *action.SchemaResponse) {
 	resp.Schema = actionschema.Schema{
-		MarkdownDescription: "Pauses a Paddle subscription — see https://developer.paddle.com/api-reference/subscriptions/pause-subscription. " +
-			"Checks the subscription's current status first and skips the call entirely if it's already `paused`, rather than " +
-			"erroring or re-invoking (docs/guardrails/money-moving-actions-no-blanket-retry.md). No `paddle_subscription` resource " +
-			"exists in this provider (docs/decisions/0010-v3-scope-lifecycle-actions.md) — `subscription_id` is a plain string.",
+		MarkdownDescription: "Pauses a Paddle subscription. See [Paddle API Reference](https://developer.paddle.com/api-reference/subscriptions/pause-subscription). Checks the subscription's current status first and skips the call entirely if it's already `paused`, rather than erroring or re-invoking. No `paddle_subscription` resource exists in this provider — subscriptions are checkout-created, not declared in Terraform — so `subscription_id` is a plain string.",
 		Attributes: map[string]actionschema.Attribute{
 			"subscription_id": actionschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "The subscription to pause (`sub_...`).",
+				MarkdownDescription: "The subscription to pause (prefix `sub_...`).",
 			},
 			"effective_from": actionschema.StringAttribute{
-				Required: true,
-				MarkdownDescription: "`immediately` or `next_billing_period`. Required (no default applied here) even though " +
-					"Paddle defaults to `next_billing_period` server-side if omitted — deliberately, so an immediate pause is " +
-					"never an implicit choice.",
-				Validators: []validator.String{stringvalidator.OneOf("immediately", "next_billing_period")},
+				Required:            true,
+				MarkdownDescription: "When the pause takes effect: `immediately` or `next_billing_period`. Required (no default applied here) even though Paddle defaults to `next_billing_period` server-side if omitted — deliberately, so an immediate pause is never an implicit choice.",
+				Validators:          []validator.String{stringvalidator.OneOf("immediately", "next_billing_period")},
 			},
 			"resume_at": actionschema.StringAttribute{
 				Optional:            true,
@@ -60,7 +55,7 @@ func (a *SubscriptionPauseAction) Schema(_ context.Context, _ action.SchemaReque
 			},
 			"on_resume": actionschema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "`continue_existing_billing_period` or `start_new_billing_period`. Left to Paddle's own default (`start_new_billing_period`) if omitted.",
+				MarkdownDescription: "Behavior on resume: `continue_existing_billing_period` or `start_new_billing_period`. Left to Paddle's own default (`start_new_billing_period`) if omitted.",
 				Validators:          []validator.String{stringvalidator.OneOf("continue_existing_billing_period", "start_new_billing_period")},
 			},
 		},

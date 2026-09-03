@@ -2,11 +2,13 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -96,4 +98,34 @@ func resolveTimeout(ctx context.Context, configured timeouts.Value, op timeoutOp
 
 	derived, cancel := context.WithTimeout(ctx, d)
 	return derived, cancel, diags
+}
+
+// describedTimeouts returns the standard timeouts attribute with a
+// MarkdownDescription that documents the default and hard-ceiling durations
+// (interpolated from defaultOpTimeout/maxResourceTimeout so the prose can't
+// drift from the actual values), per
+// docs/guardrails/configurable-timeouts-need-a-hard-ceiling.md.
+func describedTimeouts(ctx context.Context) schema.Attribute {
+	base := timeouts.Attributes(ctx, timeouts.Opts{
+		Create: true,
+		Read:   true,
+		Update: true,
+		Delete: true,
+	})
+	// terraform-plugin-framework-timeouts always returns a
+	// SingleNestedAttribute today (verified against the pinned v0.7.0
+	// source) — panic rather than silently ship an attribute with no
+	// MarkdownDescription if a future dependency bump ever changes that,
+	// since this runs at Schema() construction time and any acceptance or
+	// unit test that exercises a resource's Schema() will catch it
+	// immediately.
+	sn, ok := base.(schema.SingleNestedAttribute)
+	if !ok {
+		panic("describedTimeouts: timeouts.Attributes returned unexpected type; update this function for the new shape")
+	}
+	sn.MarkdownDescription = fmt.Sprintf(
+		"Each operation defaults to %d seconds and is capped at a %d-minute hard ceiling, regardless of what is configured here.",
+		int(defaultOpTimeout/time.Second), int(maxResourceTimeout/time.Minute),
+	)
+	return sn
 }

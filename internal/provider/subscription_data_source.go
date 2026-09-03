@@ -48,7 +48,7 @@ func (d *SubscriptionDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			"`customer_id`/`status` filters — closes the discovery gap the `paddle_subscription_cancel`/" +
 			"`pause`/`resume`/`charge` actions otherwise have, since each of those requires a " +
 			"`subscription_id` with no other in-Terraform way to find one. See " +
-			"https://developer.paddle.com/api-reference/subscriptions/overview. If `id` is set, every " +
+			"[Paddle API Reference](https://developer.paddle.com/api-reference/subscriptions/overview). If `id` is set, every " +
 			"other filter is ignored and that subscription is fetched directly. Otherwise, `customer_id` " +
 			"and/or `status` are applied as server-side filters and exactly one subscription must match — " +
 			"zero or more than one match is an error, not a silent first-result pick.",
@@ -56,12 +56,12 @@ func (d *SubscriptionDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 			"id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Paddle subscription ID (`sub_...`) to look up directly. Leave unset to look up by `customer_id`/`status` instead.",
+				MarkdownDescription: "Paddle subscription ID (prefix `sub_...`) to look up directly. Leave unset to look up by `customer_id`/`status` instead.",
 			},
 			"customer_id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Filter by the owning customer's ID (`ctm_...`). Ignored if `id` is set.",
+				MarkdownDescription: "Filter by the owning customer's ID (prefix `ctm_...`). Ignored if `id` is set.",
 			},
 			"status": schema.StringAttribute{
 				Optional: true,
@@ -71,13 +71,13 @@ func (d *SubscriptionDataSource) Schema(_ context.Context, _ datasource.SchemaRe
 				},
 				MarkdownDescription: "Filter by status: one of `active`, `canceled`, `past_due`, `paused`, `trialing`. Ignored if `id` is set. Also returned (computed) with the matched subscription's actual status.",
 			},
-			"currency_code": schema.StringAttribute{Computed: true},
+			"currency_code": schema.StringAttribute{Computed: true, MarkdownDescription: "ISO 4217 code for the subscription's primary currency."},
 			"next_billed_at": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "RFC 3339 date-time of the next scheduled billing, or `null` if there isn't one (e.g. a canceled/paused subscription).",
+				MarkdownDescription: "RFC 3339 date-time of the next scheduled billing, or `null` if there isn't one (e.g., a canceled/paused subscription).",
 			},
-			"created_at": schema.StringAttribute{Computed: true},
-			"updated_at": schema.StringAttribute{Computed: true},
+			"created_at": schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time this subscription was created, set by Paddle."},
+			"updated_at": schema.StringAttribute{Computed: true, MarkdownDescription: "RFC 3339 date-time this subscription was last updated, set by Paddle."},
 		},
 	}
 }

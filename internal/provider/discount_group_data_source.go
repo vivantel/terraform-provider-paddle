@@ -26,14 +26,14 @@ func (d *DiscountGroupDataSource) Metadata(_ context.Context, req datasource.Met
 
 func (d *DiscountGroupDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Look up an existing Paddle discount group by ID — see https://developer.paddle.com/api-reference/discount-groups/overview.",
+		MarkdownDescription: "Look up an existing Paddle discount group by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/discount-groups/overview).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Paddle discount group ID (`dsg_...`) to look up.",
+				MarkdownDescription: "Paddle discount group ID (prefix `dsg_...`) to look up.",
 			},
-			"name":   schema.StringAttribute{Computed: true},
-			"status": schema.StringAttribute{Computed: true},
+			"name":   schema.StringAttribute{Computed: true, MarkdownDescription: "Discount group name (1–500 characters)."},
+			"status": schema.StringAttribute{Computed: true, MarkdownDescription: "Group status: `active` or `archived`."},
 		},
 	}
 }

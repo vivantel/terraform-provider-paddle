@@ -34,7 +34,7 @@ func (d *CustomerDataSource) Metadata(_ context.Context, req datasource.Metadata
 
 func (d *CustomerDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// PII warning below follows
+		// PII warning follows
 		// docs/guardrails/pii-bearing-data-sources-need-state-security-warning.md
 		// exactly — same posture README.md's Actions section already
 		// takes for financial risk (⚠️ callout, concrete consequence,
@@ -43,7 +43,7 @@ func (d *CustomerDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 		// common, wrong assumption that this concern doesn't apply.
 		MarkdownDescription: "Look up an existing Paddle customer, either directly by `id` or by `email` " +
 			"(exact match) — closes the discovery gap of finding a subscription's or transaction's owning " +
-			"customer from inside Terraform. See https://developer.paddle.com/api-reference/customers/overview.\n\n" +
+			"customer from inside Terraform. See [Paddle API Reference](https://developer.paddle.com/api-reference/customers/overview).\n\n" +
 			"**⚠️ This data source exposes customer PII (email, name) and writes it into your Terraform " +
 			"state file.** Terraform persists every data source read into state, in plaintext by default, " +
 			"exactly as durably as a resource's state — not just once, but on every `plan`/`refresh` this " +
@@ -59,15 +59,15 @@ func (d *CustomerDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 			"id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Paddle customer ID (`ctm_...`) to look up directly. Leave unset to look up by `email` instead.",
+				MarkdownDescription: "Paddle customer ID (prefix `ctm_...`) to look up directly. Leave unset to look up by `email` instead.",
 			},
 			"email": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
 				MarkdownDescription: "Filter by email address (exact match — Paddle's `/customers` API does not support partial/fuzzy email matching here). Ignored if `id` is set.",
 			},
-			"name":   schema.StringAttribute{Computed: true},
-			"status": schema.StringAttribute{Computed: true, MarkdownDescription: "`active` or `archived`."},
+			"name":   schema.StringAttribute{Computed: true, MarkdownDescription: "Customer's full name."},
+			"status": schema.StringAttribute{Computed: true, MarkdownDescription: "Customer status: `active` or `archived`."},
 		},
 	}
 }

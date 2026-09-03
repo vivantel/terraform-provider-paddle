@@ -44,8 +44,8 @@ func (d *CheckoutDomainDataSource) Metadata(_ context.Context, req datasource.Me
 
 func (d *CheckoutDomainDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Look up an existing Paddle checkout domain by ID — see " +
-			"https://developer.paddle.com/api-reference/checkout-domains/overview. There is no matching " +
+		MarkdownDescription: "Look up an existing Paddle checkout domain by ID. See " +
+			"[Paddle API Reference](https://developer.paddle.com/api-reference/checkout-domains/overview). There is no matching " +
 			"`paddle_checkout_domain` resource: Paddle's API has no create or update operation for this " +
 			"entity at all — a domain can only be added via the dashboard (Paddle > Checkout > Website " +
 			"approval > Domain approval), confirmed against the real API reference rather than assumed. " +
@@ -53,15 +53,15 @@ func (d *CheckoutDomainDataSource) Schema(_ context.Context, _ datasource.Schema
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Paddle checkout domain ID (`chedom_...`) to look up.",
+				MarkdownDescription: "Paddle checkout domain ID (prefix `chedom_...`) to look up.",
 			},
 			"domain": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "The domain name (FQDN), e.g. `checkout.example.com`.",
+				MarkdownDescription: "The domain name (FQDN), e.g., `checkout.example.com`.",
 			},
 			"status": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "`pending_review`, `in_review`, `approved`, `rejected`, or `action_required`.",
+				MarkdownDescription: "Domain status: `pending_review`, `in_review`, `approved`, `rejected`, or `action_required`.",
 			},
 			"payment_method_verification": schema.SingleNestedAttribute{
 				Computed: true,
@@ -71,7 +71,7 @@ func (d *CheckoutDomainDataSource) Schema(_ context.Context, _ datasource.Schema
 						Attributes: map[string]schema.Attribute{
 							"status": schema.StringAttribute{
 								Computed:            true,
-								MarkdownDescription: "`verified` or `unverified`.",
+								MarkdownDescription: "Apple Pay verification status: `verified` or `unverified`.",
 							},
 						},
 					},

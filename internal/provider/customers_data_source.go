@@ -32,7 +32,7 @@ func (d *CustomersDataSource) Metadata(_ context.Context, req datasource.Metadat
 
 func (d *CustomersDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// PII warning below follows
+		// PII warning follows
 		// docs/guardrails/pii-bearing-data-sources-need-state-security-warning.md's
 		// "plural/list variants compound this, not just repeat it" treatment
 		// — this returns *multiple* customers' PII per use, not a
@@ -40,7 +40,7 @@ func (d *CustomersDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 		MarkdownDescription: "List every Paddle customer matching `email`/`status` filters — the plural " +
 			"companion to `paddle_customer` (which requires exactly one match, or resolves by `id` " +
 			"directly). Leave both filters unset to list every customer in the account. See " +
-			"https://developer.paddle.com/api-reference/customers/overview.\n\n" +
+			"[Paddle API Reference](https://developer.paddle.com/api-reference/customers/overview).\n\n" +
 			"**⚠️ This data source exposes multiple customers' PII (email, name) at once and writes it " +
 			"into your Terraform state file.** It compounds the same risk `paddle_customer` (singular) " +
 			"carries — Terraform persists every data source read into state, in plaintext by default, on " +
@@ -67,10 +67,10 @@ func (d *CustomersDataSource) Schema(_ context.Context, _ datasource.SchemaReque
 				MarkdownDescription: "Matching customers.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"id":     schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle customer ID (`ctm_...`)."},
-						"email":  schema.StringAttribute{Computed: true},
-						"name":   schema.StringAttribute{Computed: true},
-						"status": schema.StringAttribute{Computed: true, MarkdownDescription: "`active` or `archived`."},
+						"id":     schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle customer ID (prefix `ctm_...`)."},
+						"email":  schema.StringAttribute{Computed: true, MarkdownDescription: "Customer's email address."},
+						"name":   schema.StringAttribute{Computed: true, MarkdownDescription: "Customer's full name."},
+						"status": schema.StringAttribute{Computed: true, MarkdownDescription: "Customer status: `active` or `archived`."},
 					},
 				},
 			},

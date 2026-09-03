@@ -3,12 +3,12 @@
 page_title: "paddle_notification_setting Data Source - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  Look up an existing Paddle notification setting by ID — see https://developer.paddle.com/api-reference/notification-settings/overview.
+  Look up an existing Paddle notification setting by ID. See Paddle API Reference https://developer.paddle.com/api-reference/notification-settings/overview.
 ---
 
 # paddle_notification_setting (Data Source)
 
-Look up an existing Paddle notification setting by ID — see https://developer.paddle.com/api-reference/notification-settings/overview.
+Look up an existing Paddle notification setting by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/notification-settings/overview).
 
 ## Example Usage
 
@@ -28,16 +28,16 @@ output "webhook_secret" {
 
 ### Required
 
-- `id` (String) Paddle notification setting ID (`ntfset_...`) to look up.
+- `id` (String) Paddle notification setting ID (prefix `ntfset_...`) to look up.
 
 ### Read-Only
 
-- `active` (Boolean)
-- `api_version` (Number)
-- `description` (String)
-- `destination` (String)
+- `active` (Boolean) Whether Paddle tries to deliver events to this destination.
+- `api_version` (Number) API version used for event payloads sent to this destination.
+- `description` (String) Notification setting description (1–500 characters).
+- `destination` (String) Webhook URL or email address.
 - `endpoint_secret_key` (String, Sensitive) Secret key Paddle uses to sign webhook payloads sent to this destination.
-- `include_sensitive_fields` (Boolean)
-- `subscribed_events` (List of String)
-- `traffic_source` (String)
-- `type` (String)
+- `include_sensitive_fields` (Boolean) Whether sensitive fields are included in event payloads.
+- `subscribed_events` (List of String) Event type names this destination subscribes to (e.g., `transaction.billed`).
+- `traffic_source` (String) Traffic source: `platform`, `simulation`, or `all`.
+- `type` (String) Notification type: `email` or `url`.

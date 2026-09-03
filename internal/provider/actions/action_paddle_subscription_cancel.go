@@ -36,23 +36,16 @@ func (a *SubscriptionCancelAction) Metadata(_ context.Context, req action.Metada
 
 func (a *SubscriptionCancelAction) Schema(_ context.Context, _ action.SchemaRequest, resp *action.SchemaResponse) {
 	resp.Schema = actionschema.Schema{
-		MarkdownDescription: "Cancels a Paddle subscription — see https://developer.paddle.com/api-reference/subscriptions/cancel-subscription. " +
-			"**Canceling can't be undone** (Paddle's own words: \"You can't reinstate a canceled subscription\"). Checks the " +
-			"subscription's current status first and skips the call entirely if it's already `canceled`, rather than erroring or " +
-			"re-invoking (docs/guardrails/money-moving-actions-no-blanket-retry.md). No `paddle_subscription` resource exists in " +
-			"this provider — subscriptions are checkout-created, not declared in Terraform " +
-			"(docs/decisions/0010-v3-scope-lifecycle-actions.md) — so `subscription_id` is a plain string, not a resource reference.",
+		MarkdownDescription: "Cancels a Paddle subscription. See [Paddle API Reference](https://developer.paddle.com/api-reference/subscriptions/cancel-subscription). **Canceling can't be undone** (Paddle's own words: \"You can't reinstate a canceled subscription\"). Checks the subscription's current status first and skips the call entirely if it's already `canceled`, rather than erroring or re-invoking. No `paddle_subscription` resource exists in this provider — subscriptions are checkout-created, not declared in Terraform — so `subscription_id` is a plain string, not a resource reference.",
 		Attributes: map[string]actionschema.Attribute{
 			"subscription_id": actionschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "The subscription to cancel (`sub_...`).",
+				MarkdownDescription: "The subscription to cancel (prefix `sub_...`).",
 			},
 			"effective_from": actionschema.StringAttribute{
-				Required: true,
-				MarkdownDescription: "`immediately` or `next_billing_period`. Required (no default applied here) even though Paddle " +
-					"defaults to `next_billing_period` server-side if omitted — deliberately, so an irreversible immediate " +
-					"cancellation is never an implicit choice.",
-				Validators: []validator.String{stringvalidator.OneOf("immediately", "next_billing_period")},
+				Required:            true,
+				MarkdownDescription: "When the cancellation takes effect: `immediately` or `next_billing_period`. Required (no default applied here) even though Paddle defaults to `next_billing_period` server-side if omitted — deliberately, so an irreversible immediate cancellation is never an implicit choice.",
+				Validators:          []validator.String{stringvalidator.OneOf("immediately", "next_billing_period")},
 			},
 		},
 	}

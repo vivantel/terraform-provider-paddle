@@ -3,12 +3,12 @@
 page_title: "paddle_discount_group Data Source - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  Look up an existing Paddle discount group by ID — see https://developer.paddle.com/api-reference/discount-groups/overview.
+  Look up an existing Paddle discount group by ID. See Paddle API Reference https://developer.paddle.com/api-reference/discount-groups/overview.
 ---
 
 # paddle_discount_group (Data Source)
 
-Look up an existing Paddle discount group by ID — see https://developer.paddle.com/api-reference/discount-groups/overview.
+Look up an existing Paddle discount group by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/discount-groups/overview).
 
 ## Example Usage
 
@@ -27,9 +27,9 @@ output "discount_group_name" {
 
 ### Required
 
-- `id` (String) Paddle discount group ID (`dsg_...`) to look up.
+- `id` (String) Paddle discount group ID (prefix `dsg_...`) to look up.
 
 ### Read-Only
 
-- `name` (String)
-- `status` (String)
+- `name` (String) Discount group name (1–500 characters).
+- `status` (String) Group status: `active` or `archived`.

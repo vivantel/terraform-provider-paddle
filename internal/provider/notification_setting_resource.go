@@ -61,23 +61,20 @@ func (r *NotificationSettingResource) Metadata(_ context.Context, req resource.M
 
 func (r *NotificationSettingResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A Paddle notification setting (a webhook or email destination) — see " +
-			"https://developer.paddle.com/api-reference/notification-settings/overview. Unlike " +
-			"`paddle_product`/`paddle_price`/`paddle_discount`/`paddle_discount_group`, Paddle has a real " +
-			"hard delete for this entity; `terraform destroy` removes it entirely rather than archiving it.",
+		MarkdownDescription: "A Paddle notification setting is a webhook URL or email destination that receives event payloads. See [Paddle API Reference](https://developer.paddle.com/api-reference/notification-settings/overview). Unlike `paddle_product`/`paddle_price`/`paddle_discount`/`paddle_discount_group`, Paddle has a real hard delete for this entity; `terraform destroy` removes it entirely rather than archiving it.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Paddle notification setting ID (`ntfset_...`).",
+				MarkdownDescription: "Paddle notification setting ID (prefix `ntfset_...`).",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"description": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "1-500 characters.",
+				MarkdownDescription: "Description (1–500 characters).",
 			},
 			"type": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "`email` or `url`. Immutable after create — changing this replaces the notification setting.",
+				MarkdownDescription: "Notification type: `email` or `url`. Immutable after create — changing this replaces the notification setting.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 				Validators: []validator.String{
 					stringvalidator.OneOf("email", "url"),
@@ -85,31 +82,25 @@ func (r *NotificationSettingResource) Schema(ctx context.Context, _ resource.Sch
 			},
 			"destination": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Webhook URL (for `type = \"url\"`) or email address (for `type = \"email\"`). 1-2048 characters.",
+				MarkdownDescription: "Webhook URL (for `type = \"url\"`) or email address (for `type = \"email\"`). 1–2048 characters.",
 			},
 			"active": schema.BoolAttribute{
-				Optional: true,
-				Computed: true,
-				MarkdownDescription: "Whether Paddle should try to deliver events to this destination. Defaults to `true`. " +
-					"Not settable at create per Paddle's API — if set to `false` here, this resource issues an immediate " +
-					"follow-up update right after creation to apply it.",
-				Default:       booldefault.StaticBool(true),
-				PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
+				Optional:            true,
+				Computed:            true,
+				MarkdownDescription: "Whether Paddle should try to deliver events to this destination. Defaults to `true`. Not settable at create per Paddle's API — if set to `false` here, this resource issues an immediate follow-up update right after creation to apply it.",
+				Default:             booldefault.StaticBool(true),
+				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
 			"subscribed_events": schema.ListAttribute{
 				Required:            true,
 				ElementType:         types.StringType,
-				MarkdownDescription: "Event type names to subscribe to (e.g. `transaction.billed`). Paddle's API is the source of truth for valid values — see https://developer.paddle.com/webhooks/overview for the full list; this schema doesn't replicate it.",
+				MarkdownDescription: "Event type names to subscribe to (e.g., `transaction.billed`). Paddle's API is the source of truth for valid values — see [Paddle Webhooks Overview](https://developer.paddle.com/webhooks/overview) for the full list; this schema does not replicate it.",
 			},
 			"api_version": schema.Int64Attribute{
-				Optional: true,
-				Computed: true,
-				MarkdownDescription: "API version used for event payloads sent to this destination. Omit for the account " +
-					"default. Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle " +
-					"returns its own default (e.g. 1) even when this is omitted rather than leaving it null, so modeling " +
-					"this as Optional-only produced \"Provider produced inconsistent result after apply\" on the very " +
-					"first real Create — the same class of fix as `paddle_discount`'s `code`.",
-				PlanModifiers: []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
+				Optional:            true,
+				Computed:            true,
+				MarkdownDescription: "API version used for event payloads sent to this destination. Omit for the account default. Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle returns its own default (e.g., 1) even when this is omitted rather than leaving it null, so modeling this as Optional-only produced \"Provider produced inconsistent result after apply\" on the very first real Create — the same class of fix as `paddle_discount`'s `code`.",
+				PlanModifiers:       []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 			},
 			"include_sensitive_fields": schema.BoolAttribute{
 				Optional:            true,
@@ -121,7 +112,7 @@ func (r *NotificationSettingResource) Schema(ctx context.Context, _ resource.Sch
 			"traffic_source": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "`platform`, `simulation`, or `all`. Defaults to `platform`.",
+				MarkdownDescription: "Traffic source: `platform`, `simulation`, or `all`. Defaults to `platform`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				Validators: []validator.String{
 					stringvalidator.OneOf("platform", "simulation", "all"),
@@ -133,12 +124,7 @@ func (r *NotificationSettingResource) Schema(ctx context.Context, _ resource.Sch
 				MarkdownDescription: "Secret key Paddle uses to sign webhook payloads sent to this destination.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
-				Create: true,
-				Read:   true,
-				Update: true,
-				Delete: true,
-			}),
+			"timeouts": describedTimeouts(ctx),
 		},
 	}
 }

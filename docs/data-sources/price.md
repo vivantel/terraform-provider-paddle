@@ -3,12 +3,12 @@
 page_title: "paddle_price Data Source - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  Look up an existing Paddle price by ID — see https://developer.paddle.com/api-reference/prices/overview.
+  Look up an existing Paddle price by ID. See Paddle API Reference https://developer.paddle.com/api-reference/prices/overview.
 ---
 
 # paddle_price (Data Source)
 
-Look up an existing Paddle price by ID — see https://developer.paddle.com/api-reference/prices/overview.
+Look up an existing Paddle price by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/prices/overview).
 
 ## Example Usage
 
@@ -27,27 +27,27 @@ output "price_amount" {
 
 ### Required
 
-- `id` (String) Paddle price ID (`pri_...`) to look up.
+- `id` (String) Paddle price ID (prefix `pri_...`) to look up.
 
 ### Read-Only
 
 - `billing_cycle` (Attributes) Null for a one-time price. (see [below for nested schema](#nestedatt--billing_cycle))
-- `custom_data` (String)
-- `description` (String)
-- `name` (String)
-- `product_id` (String)
+- `custom_data` (String) Arbitrary key-value metadata attached to this price.
+- `description` (String) Internal price description (2–500 characters).
+- `name` (String) Customer-facing price name (1–150 characters).
+- `product_id` (String) Paddle product ID (prefix `pro_...`) this price belongs to.
 - `quantity` (Attributes) (see [below for nested schema](#nestedatt--quantity))
-- `status` (String)
-- `tax_mode` (String)
-- `unit_price` (Attributes) (see [below for nested schema](#nestedatt--unit_price))
+- `status` (String) Price status: `active` or `archived`.
+- `tax_mode` (String) Tax mode: `account_setting`, `external`, `internal`, or `location`.
+- `unit_price` (Attributes) Price per unit, in the lowest denomination. (see [below for nested schema](#nestedatt--unit_price))
 
 <a id="nestedatt--billing_cycle"></a>
 ### Nested Schema for `billing_cycle`
 
 Read-Only:
 
-- `frequency` (Number)
-- `interval` (String)
+- `frequency` (Number) Number of intervals between each billing.
+- `interval` (String) Interval unit: one of `day`, `week`, `month`, or `year`.
 
 
 <a id="nestedatt--quantity"></a>
@@ -55,8 +55,8 @@ Read-Only:
 
 Read-Only:
 
-- `maximum` (Number)
-- `minimum` (Number)
+- `maximum` (Number) Maximum quantity per order.
+- `minimum` (Number) Minimum quantity per order.
 
 
 <a id="nestedatt--unit_price"></a>
@@ -64,5 +64,5 @@ Read-Only:
 
 Read-Only:
 
-- `amount` (String)
-- `currency_code` (String)
+- `amount` (String) Amount in the lowest denomination as a string (e.g., "1000" = $10.00 for a 2-decimal currency).
+- `currency_code` (String) ISO 4217 currency code (e.g., USD).

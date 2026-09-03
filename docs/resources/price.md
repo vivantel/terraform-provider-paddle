@@ -3,12 +3,12 @@
 page_title: "paddle_price Resource - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  A Paddle price — see https://developer.paddle.com/api-reference/prices/overview. Paddle has no hard delete for prices; terraform destroy archives it instead (status becomes archived).
+  A Paddle price defines a specific amount and billing cadence attached to a product. See Paddle API Reference https://developer.paddle.com/api-reference/prices/overview. Paddle has no hard delete for prices; terraform destroy archives the price instead (status becomes archived).
 ---
 
 # paddle_price (Resource)
 
-A Paddle price — see https://developer.paddle.com/api-reference/prices/overview. Paddle has no hard delete for prices; `terraform destroy` archives it instead (status becomes `archived`).
+A Paddle price defines a specific amount and billing cadence attached to a product. See [Paddle API Reference](https://developer.paddle.com/api-reference/prices/overview). Paddle has no hard delete for prices; `terraform destroy` archives the price instead (status becomes `archived`).
 
 ## Example Usage
 
@@ -24,14 +24,16 @@ resource "paddle_price" "monthly" {
   name        = "Monthly"            # customer-facing
 
   unit_price = {
-    amount        = "2900" # $29.00 for a 2-decimal currency
-    currency_code = "USD"
+    amount        = "2900" # $29.00 for a 2-decimal currency — lowest denomination as a string
+    currency_code = "USD"  # ISO 4217 code
   }
 
   billing_cycle = {
-    interval  = "month"
+    interval  = "month" # day, week, month, or year
     frequency = 1
   }
+
+  # tax_mode = "account_setting" # account_setting, external, internal, or location — defaults to account_setting
 }
 ```
 
@@ -40,31 +42,31 @@ resource "paddle_price" "monthly" {
 
 ### Required
 
-- `description` (String) 2-500 characters. Internal only, never shown to customers.
-- `product_id` (String) Paddle product ID (`pro_...`) this price belongs to. Changing this replaces the price — Paddle prices aren't reparented in place.
+- `description` (String) Internal description (2–500 characters). Never shown to customers.
+- `product_id` (String) Paddle product ID (prefix `pro_...`) this price belongs to. Changing this replaces the price — Paddle prices are not reparented in place.
 - `unit_price` (Attributes) (see [below for nested schema](#nestedatt--unit_price))
 
 ### Optional
 
-- `billing_cycle` (Attributes) Omit for a one-time price. (see [below for nested schema](#nestedatt--billing_cycle))
+- `billing_cycle` (Attributes) Billing cycle for recurring prices. Omit for a one-time price. (see [below for nested schema](#nestedatt--billing_cycle))
 - `custom_data` (String) Arbitrary structured JSON data, e.g. `jsonencode({ internal_id = 123 })`. Compared semantically, not byte-for-byte — key ordering or whitespace differences between what you write and what Paddle echoes back won't produce a diff.
-- `name` (String) 1-150 characters. Customer-facing.
-- `quantity` (Attributes) Defaults to 1-100 if omitted. (see [below for nested schema](#nestedatt--quantity))
-- `tax_mode` (String) `account_setting` (default), `external`, `internal`, or `location`.
-- `timeouts` (Attributes) (see [below for nested schema](#nestedatt--timeouts))
+- `name` (String) Customer-facing name (1–150 characters).
+- `quantity` (Attributes) Quantity bounds. Defaults to minimum 1, maximum 100 if omitted. (see [below for nested schema](#nestedatt--quantity))
+- `tax_mode` (String) Tax mode: `account_setting` (default), `external`, `internal`, or `location`.
+- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
 
 ### Read-Only
 
-- `id` (String) Paddle price ID (`pri_...`).
-- `status` (String) `active` or `archived`.
+- `id` (String) Paddle price ID (prefix `pri_...`).
+- `status` (String) Price status: `active` or `archived`.
 
 <a id="nestedatt--unit_price"></a>
 ### Nested Schema for `unit_price`
 
 Required:
 
-- `amount` (String) Lowest denomination as a string, e.g. "1000" = $10.00 for a 2-decimal currency.
-- `currency_code` (String) ISO 4217 code, e.g. USD.
+- `amount` (String) Amount in the lowest denomination as a string (e.g., "1000" = $10.00 for a 2-decimal currency).
+- `currency_code` (String) ISO 4217 currency code (e.g., USD).
 
 
 <a id="nestedatt--billing_cycle"></a>
@@ -72,8 +74,8 @@ Required:
 
 Required:
 
-- `frequency` (Number)
-- `interval` (String) day, week, month, or year.
+- `frequency` (Number) Number of intervals between each billing (e.g., `interval = "month"` + `frequency = 1` is monthly; `interval = "week"` + `frequency = 2` is bi-weekly).
+- `interval` (String) Interval unit: `day`, `week`, `month`, or `year`.
 
 
 <a id="nestedatt--quantity"></a>
@@ -81,8 +83,8 @@ Required:
 
 Required:
 
-- `maximum` (Number)
-- `minimum` (Number)
+- `maximum` (Number) Maximum quantity per order. Defaults to `100` if the whole `quantity` block is omitted.
+- `minimum` (Number) Minimum quantity per order. Defaults to `1` if the whole `quantity` block is omitted.
 
 
 <a id="nestedatt--timeouts"></a>

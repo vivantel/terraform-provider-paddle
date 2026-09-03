@@ -64,20 +64,20 @@ func (r *ProductResource) Metadata(_ context.Context, req resource.MetadataReque
 
 func (r *ProductResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A Paddle product — see https://developer.paddle.com/api-reference/products/overview. Paddle has no hard delete for products; `terraform destroy` archives it instead (status becomes `archived`).",
+		MarkdownDescription: "A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See [Paddle API Reference](https://developer.paddle.com/api-reference/products/overview). Paddle has no hard delete for products; `terraform destroy` archives the product instead (status becomes `archived`).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Paddle product ID (`pro_...`).",
+				MarkdownDescription: "Paddle product ID (prefix `pro_...`).",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"name": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "1-200 characters.",
+				MarkdownDescription: "Product name (1–200 characters).",
 			},
 			"tax_category": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "One of: digital-goods, ebooks, implementation-services, professional-services, saas, software-programming-services, standard, training-services, website-hosting.",
+				MarkdownDescription: "Tax category. One of: `digital-goods`, `ebooks`, `implementation-services`, `professional-services`, `saas`, `software-programming-services`, `standard`, `training-services`, `website-hosting`.",
 				Validators: []validator.String{
 					stringvalidator.OneOf(
 						"digital-goods", "ebooks", "implementation-services",
@@ -87,12 +87,13 @@ func (r *ProductResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 				},
 			},
 			"description": schema.StringAttribute{
-				Optional: true,
+				Optional:            true,
+				MarkdownDescription: "Product description (1–200 characters).",
 			},
 			"type": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "`standard` or `custom`. Defaults to `standard`.",
+				MarkdownDescription: "Product type: `standard` or `custom`. Defaults to `standard`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				Validators: []validator.String{
 					stringvalidator.OneOf("standard", "custom"),
@@ -100,20 +101,15 @@ func (r *ProductResource) Schema(ctx context.Context, _ resource.SchemaRequest, 
 			},
 			"image_url": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Must be a publicly accessible HTTPS URL.",
+				MarkdownDescription: "Publicly accessible HTTPS URL for the product image.",
 			},
 			"status": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "`active` or `archived`.",
+				MarkdownDescription: "Product status: `active` or `archived`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"custom_data": customDataAttribute(),
-			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
-				Create: true,
-				Read:   true,
-				Update: true,
-				Delete: true,
-			}),
+			"timeouts":    describedTimeouts(ctx),
 		},
 	}
 }

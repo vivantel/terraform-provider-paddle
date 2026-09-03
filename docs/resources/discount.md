@@ -3,12 +3,12 @@
 page_title: "paddle_discount Resource - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  A Paddle discount — see https://developer.paddle.com/api-reference/discounts/overview. Paddle has no delete operation for discounts at all; terraform destroy sets status = "archived" via a normal update, the same as paddle_product/paddle_price archive on destroy (though those two have an actual archive semantic — discounts genuinely have no other removal path per Paddle's docs).
+  A Paddle discount is a percentage, flat, or per-seat reduction applied at checkout. See Paddle API Reference https://developer.paddle.com/api-reference/discounts/overview. Paddle has no delete operation for discounts; terraform destroy sets status = "archived" via a normal update, the same pattern paddle_product/paddle_price use for their archive-on-destroy behavior.
 ---
 
 # paddle_discount (Resource)
 
-A Paddle discount — see https://developer.paddle.com/api-reference/discounts/overview. Paddle has no delete operation for discounts at all; `terraform destroy` sets `status = "archived"` via a normal update, the same as `paddle_product`/`paddle_price` archive on destroy (though those two have an actual archive semantic — discounts genuinely have no other removal path per Paddle's docs).
+A Paddle discount is a percentage, flat, or per-seat reduction applied at checkout. See [Paddle API Reference](https://developer.paddle.com/api-reference/discounts/overview). Paddle has no delete operation for discounts; `terraform destroy` sets `status = "archived"` via a normal update, the same pattern `paddle_product`/`paddle_price` use for their archive-on-destroy behavior.
 
 ## Example Usage
 
@@ -29,32 +29,32 @@ resource "paddle_discount" "launch_promo" {
 
 ### Required
 
-- `amount` (String) "0.01"-"100" for `percentage`; lowest currency denomination for `flat`/`flat_per_seat` (e.g. "1000" = $10.00 for a 2-decimal currency).
-- `description` (String) 1-500 characters. Internal only, never shown to customers.
-- `type` (String) `flat`, `flat_per_seat`, or `percentage`.
+- `amount` (String) Amount: `"0.01"`–`"100"` for `percentage`; lowest currency denomination for `flat`/`flat_per_seat` (e.g., `"1000"` = $10.00 for a 2-decimal currency).
+- `description` (String) Internal description (1–500 characters). Never shown to customers.
+- `type` (String) Discount type: `flat`, `flat_per_seat`, or `percentage`.
 
 ### Optional
 
-- `code` (String) 1-32 alphanumeric characters, case-insensitive. Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle auto-generates a code when this is omitted (e.g. "3268E6WW3W") rather than leaving it null, so modeling this as Optional-only produced "Provider produced inconsistent result after apply" on the very first real Create.
-- `currency_code` (String) ISO 4217 code. Required by Paddle's API when `type` is `flat` or `flat_per_seat`; not accepted for `percentage` — the API enforces this, not this schema.
+- `code` (String) Discount code (1–32 alphanumeric characters, case-insensitive). Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle auto-generates a code when this is omitted (e.g., `"3268E6WW3W"`) rather than leaving it null, so modeling this as Optional-only produced "Provider produced inconsistent result after apply" on the very first real Create.
+- `currency_code` (String) ISO 4217 currency code. Required by Paddle's API when `type` is `flat` or `flat_per_seat`; not accepted for `percentage`.
 - `custom_data` (String) Arbitrary structured JSON data, e.g. `jsonencode({ internal_id = 123 })`. Compared semantically, not byte-for-byte — key ordering or whitespace differences between what you write and what Paddle echoes back won't produce a diff.
-- `discount_group_id` (String) Paddle discount group ID (`dsg_...`), if this discount belongs to one. A discount belongs to at most one group.
-- `enabled_for_checkout` (Boolean) Defaults to `true`.
-- `expires_at` (String) RFC 3339 date-time. Omit (or set null) for a discount that never expires.
-- `maximum_recurring_intervals` (Number) Minimum 1. Requires `recur = true` — the API enforces this, not this schema. Omit (or set null) for no limit.
-- `mode` (String) `standard` or `custom`. Defaults to `standard`.
+- `discount_group_id` (String) Paddle discount group ID (prefix `dsg_...`), if this discount belongs to one. A discount belongs to at most one group.
+- `enabled_for_checkout` (Boolean) Whether the discount is enabled for checkout. Defaults to `true`.
+- `expires_at` (String) RFC 3339 date-time. Omit for a discount that never expires.
+- `maximum_recurring_intervals` (Number) Minimum 1. Requires `recur = true` (enforced by the API). Omit for no limit.
+- `mode` (String) Discount mode: `standard` or `custom`. Defaults to `standard`.
 - `recur` (Boolean) Whether the discount applies to every billing period of a recurring price, not just the first. Defaults to `false`.
-- `restrict_to` (List of String) Product or price IDs this discount is restricted to. Omit (or set null) to apply to the whole catalog.
-- `timeouts` (Attributes) (see [below for nested schema](#nestedatt--timeouts))
-- `usage_limit` (Number) Minimum 1. Omit (or set null) for unlimited redemptions.
+- `restrict_to` (List of String) Product or price IDs this discount is restricted to. Omit to apply to the whole catalog.
+- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
+- `usage_limit` (Number) Minimum 1. Omit for unlimited redemptions.
 
 ### Read-Only
 
 - `created_at` (String) RFC 3339 date-time this discount was created, set by Paddle.
-- `id` (String) Paddle discount ID (`dsc_...`).
-- `status` (String) `active` or `archived`.
+- `id` (String) Paddle discount ID (prefix `dsc_...`).
+- `status` (String) Discount status: `active` or `archived`.
 - `times_used` (Number) Number of times this discount has been redeemed. Paddle-assigned; not settable, and can drift between plans as it's used outside Terraform.
-- `updated_at` (String) RFC 3339 date-time this discount was last updated, set by Paddle. Deliberately has no UseStateForUnknown — it genuinely changes on every update, so it should show as "known after apply" whenever anything else changes.
+- `updated_at` (String) RFC 3339 date-time this discount was last updated, set by Paddle. Deliberately has no UseStateForUnknown — it genuinely changes on every update, so it shows as "known after apply" whenever anything else changes.
 
 <a id="nestedatt--timeouts"></a>
 ### Nested Schema for `timeouts`

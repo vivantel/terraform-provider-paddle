@@ -43,7 +43,7 @@ func (p *PaddleProvider) Metadata(_ context.Context, _ provider.MetadataRequest,
 
 func (p *PaddleProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages Paddle Billing catalog resources (products, prices, discounts, discount groups, notification settings); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries (data sources only); and provides actions for one-time lifecycle operations (adjustments, subscription cancel/pause/resume/charge) that don't have a resource lifecycle of their own. Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
+		MarkdownDescription: "The Paddle provider manages Paddle Billing catalog resources (products, prices, discounts, discount groups, notification settings); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries (data sources only); and provides actions for one-time lifecycle operations (adjustments, subscription cancel/pause/resume/charge, notification replay) that don't have a resource lifecycle of their own. Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
 				MarkdownDescription: "Paddle API key. Can also be set via the `PADDLE_API_KEY` environment variable.",
@@ -51,7 +51,7 @@ func (p *PaddleProvider) Schema(_ context.Context, _ provider.SchemaRequest, res
 				Sensitive:           true,
 			},
 			"environment": schema.StringAttribute{
-				MarkdownDescription: "`sandbox` or `production`. Can also be set via the `PADDLE_ENVIRONMENT` environment variable. Defaults to `sandbox` if neither is set — deliberately, so a misconfigured provider block fails safe toward the environment that can't charge real cards.",
+				MarkdownDescription: "Target environment: `sandbox` or `production`. Can also be set via the `PADDLE_ENVIRONMENT` environment variable. Defaults to `sandbox` if neither is set — deliberately, so a misconfigured provider block fails safe toward the environment that can't charge real cards.",
 				Optional:            true,
 			},
 		},

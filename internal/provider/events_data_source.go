@@ -39,18 +39,18 @@ func (d *EventsDataSource) Metadata(_ context.Context, req datasource.MetadataRe
 func (d *EventsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "List Paddle account events, optionally filtered by `type` — general " +
-			"account-activity lookup. See https://developer.paddle.com/api-reference/events/overview.\n\n" +
+			"account-activity lookup. See [Paddle API Reference](https://developer.paddle.com/api-reference/events/overview).\n\n" +
 			"**Paddle retains events for 90 days only — events older than that are gone, not just " +
 			"paginated away.** A query for something that happened more than 90 days ago returns an empty " +
 			"`events` list, indistinguishable from \"nothing of that type ever happened\"; there is no way " +
 			"to look further back. Paddle's `/events` API also has no date-range filter at all (confirmed " +
 			"against the real API reference, 2026-08-11) — `type` is the only server-side filter this data " +
 			"source can apply.\n\n" +
-			// PII warning below follows
+			// PII warning follows
 			// docs/guardrails/pii-bearing-data-sources-need-state-security-warning.md's
 			// "opaque/variable-shape" treatment: `data` isn't a dedicated PII
 			// field, it's arbitrary per-event-type JSON that *can* carry PII
-			// depending on event type (e.g. `customer.created`'s payload is a
+			// depending on event type (e.g., `customer.created`'s payload is a
 			// full customer record) — worded as a possibility, not a certainty,
 			// since redacting it reliably isn't possible given the shape varies
 			// arbitrarily. Don't shorten or soften this.
@@ -70,15 +70,15 @@ func (d *EventsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 			"type": schema.ListAttribute{
 				Optional:            true,
 				ElementType:         types.StringType,
-				MarkdownDescription: "Filter by event type(s), e.g. `product.created`. Leave unset to list every event type (subject to the 90-day retention window above).",
+				MarkdownDescription: "Filter by event type(s), e.g., `product.created`. Leave unset to list every event type (subject to the 90-day retention window above).",
 			},
 			"events": schema.ListNestedAttribute{
 				Computed:            true,
 				MarkdownDescription: "Matching events, most recent first (Paddle's default `id[DESC]` ordering).",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
-						"id":   schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle event ID (`evt_...`)."},
-						"type": schema.StringAttribute{Computed: true, MarkdownDescription: "Event type, in `entity.event_type` format, e.g. `product.created`."},
+						"id":   schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle event ID (prefix `evt_...`)."},
+						"type": schema.StringAttribute{Computed: true, MarkdownDescription: "Event type, in `entity.event_type` format, e.g., `product.created`."},
 						"occurred_at": schema.StringAttribute{
 							Computed:            true,
 							MarkdownDescription: "RFC 3339 date-time this event occurred.",

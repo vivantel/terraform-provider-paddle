@@ -49,31 +49,23 @@ func (r *DiscountGroupResource) Metadata(_ context.Context, req resource.Metadat
 
 func (r *DiscountGroupResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A Paddle discount group — see https://developer.paddle.com/api-reference/discount-groups/overview. " +
-			"Groups multiple `paddle_discount`s together (via their `discount_group_id`) so their combined usage can be capped " +
-			"as a set. Paddle has no hard delete for discount groups; `terraform destroy` archives it instead (status becomes `archived`), " +
-			"the same pattern `paddle_product`/`paddle_price` use.",
+		MarkdownDescription: "A Paddle discount group is a named set that caps combined usage across the `paddle_discount` resources that belong to it. See [Paddle API Reference](https://developer.paddle.com/api-reference/discount-groups/overview). Paddle has no hard delete for discount groups; `terraform destroy` archives the group instead (status becomes `archived`), the same pattern `paddle_product`/`paddle_price` use.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "Paddle discount group ID (`dsg_...`).",
+				MarkdownDescription: "Paddle discount group ID (prefix `dsg_...`).",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"name": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "1-500 characters.",
+				MarkdownDescription: "Group name (1–500 characters).",
 			},
 			"status": schema.StringAttribute{
 				Computed:            true,
-				MarkdownDescription: "`active` or `archived`.",
+				MarkdownDescription: "Group status: `active` or `archived`.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
-			"timeouts": timeouts.Attributes(ctx, timeouts.Opts{
-				Create: true,
-				Read:   true,
-				Update: true,
-				Delete: true,
-			}),
+			"timeouts": describedTimeouts(ctx),
 		},
 	}
 }

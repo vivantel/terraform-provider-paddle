@@ -3,12 +3,12 @@
 page_title: "paddle_product Data Source - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  Look up an existing Paddle product by ID — see https://developer.paddle.com/api-reference/products/overview.
+  Look up an existing Paddle product by ID. See Paddle API Reference https://developer.paddle.com/api-reference/products/overview.
 ---
 
 # paddle_product (Data Source)
 
-Look up an existing Paddle product by ID — see https://developer.paddle.com/api-reference/products/overview.
+Look up an existing Paddle product by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/products/overview).
 
 ## Example Usage
 
@@ -27,14 +27,14 @@ output "product_name" {
 
 ### Required
 
-- `id` (String) Paddle product ID (`pro_...`) to look up.
+- `id` (String) Paddle product ID (prefix `pro_...`) to look up.
 
 ### Read-Only
 
-- `custom_data` (String)
-- `description` (String)
-- `image_url` (String)
-- `name` (String)
-- `status` (String)
-- `tax_category` (String)
-- `type` (String)
+- `custom_data` (String) Arbitrary key-value metadata attached to this product.
+- `description` (String) Internal product description (1–200 characters).
+- `image_url` (String) Product image URL, if set.
+- `name` (String) Customer-facing product name.
+- `status` (String) Product status: `active` or `archived`.
+- `tax_category` (String) Tax category: one of `digital-goods`, `ebooks`, `implementation-services`, `professional-services`, `saas`, `software-programming-services`, `standard`, `training-services`, `website-hosting`.
+- `type` (String) Product type: `standard` or `custom`.

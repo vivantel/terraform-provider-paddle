@@ -3,20 +3,22 @@
 page_title: "paddle_product Resource - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  A Paddle product — see https://developer.paddle.com/api-reference/products/overview. Paddle has no hard delete for products; terraform destroy archives it instead (status becomes archived).
+  A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See Paddle API Reference https://developer.paddle.com/api-reference/products/overview. Paddle has no hard delete for products; terraform destroy archives the product instead (status becomes archived).
 ---
 
 # paddle_product (Resource)
 
-A Paddle product — see https://developer.paddle.com/api-reference/products/overview. Paddle has no hard delete for products; `terraform destroy` archives it instead (status becomes `archived`).
+A Paddle product is the top-level catalog entity that prices and subscriptions attach to. See [Paddle API Reference](https://developer.paddle.com/api-reference/products/overview). Paddle has no hard delete for products; `terraform destroy` archives the product instead (status becomes `archived`).
 
 ## Example Usage
 
 ```terraform
 resource "paddle_product" "example" {
   name         = "Pro Plan"
-  tax_category = "saas"
+  tax_category = "saas" # digital-goods, ebooks, implementation-services, professional-services, saas, software-programming-services, standard, training-services, website-hosting
   description  = "Full-featured plan for growing teams"
+  # type        = "standard" # standard or custom — defaults to standard
+  # image_url   = "https://example.com/logo.png" # must be a publicly accessible HTTPS URL
 }
 ```
 
@@ -25,21 +27,21 @@ resource "paddle_product" "example" {
 
 ### Required
 
-- `name` (String) 1-200 characters.
-- `tax_category` (String) One of: digital-goods, ebooks, implementation-services, professional-services, saas, software-programming-services, standard, training-services, website-hosting.
+- `name` (String) Product name (1–200 characters).
+- `tax_category` (String) Tax category. One of: `digital-goods`, `ebooks`, `implementation-services`, `professional-services`, `saas`, `software-programming-services`, `standard`, `training-services`, `website-hosting`.
 
 ### Optional
 
 - `custom_data` (String) Arbitrary structured JSON data, e.g. `jsonencode({ internal_id = 123 })`. Compared semantically, not byte-for-byte — key ordering or whitespace differences between what you write and what Paddle echoes back won't produce a diff.
-- `description` (String)
-- `image_url` (String) Must be a publicly accessible HTTPS URL.
-- `timeouts` (Attributes) (see [below for nested schema](#nestedatt--timeouts))
-- `type` (String) `standard` or `custom`. Defaults to `standard`.
+- `description` (String) Product description (1–200 characters).
+- `image_url` (String) Publicly accessible HTTPS URL for the product image.
+- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
+- `type` (String) Product type: `standard` or `custom`. Defaults to `standard`.
 
 ### Read-Only
 
-- `id` (String) Paddle product ID (`pro_...`).
-- `status` (String) `active` or `archived`.
+- `id` (String) Paddle product ID (prefix `pro_...`).
+- `status` (String) Product status: `active` or `archived`.
 
 <a id="nestedatt--timeouts"></a>
 ### Nested Schema for `timeouts`

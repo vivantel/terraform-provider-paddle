@@ -3,12 +3,12 @@
 page_title: "paddle_discount_group Resource - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  A Paddle discount group — see https://developer.paddle.com/api-reference/discount-groups/overview. Groups multiple paddle_discounts together (via their discount_group_id) so their combined usage can be capped as a set. Paddle has no hard delete for discount groups; terraform destroy archives it instead (status becomes archived), the same pattern paddle_product/paddle_price use.
+  A Paddle discount group is a named set that caps combined usage across the paddle_discount resources that belong to it. See Paddle API Reference https://developer.paddle.com/api-reference/discount-groups/overview. Paddle has no hard delete for discount groups; terraform destroy archives the group instead (status becomes archived), the same pattern paddle_product/paddle_price use.
 ---
 
 # paddle_discount_group (Resource)
 
-A Paddle discount group — see https://developer.paddle.com/api-reference/discount-groups/overview. Groups multiple `paddle_discount`s together (via their `discount_group_id`) so their combined usage can be capped as a set. Paddle has no hard delete for discount groups; `terraform destroy` archives it instead (status becomes `archived`), the same pattern `paddle_product`/`paddle_price` use.
+A Paddle discount group is a named set that caps combined usage across the `paddle_discount` resources that belong to it. See [Paddle API Reference](https://developer.paddle.com/api-reference/discount-groups/overview). Paddle has no hard delete for discount groups; `terraform destroy` archives the group instead (status becomes `archived`), the same pattern `paddle_product`/`paddle_price` use.
 
 ## Example Usage
 
@@ -22,6 +22,15 @@ resource "paddle_discount" "vip_20_off" {
   amount            = "20" # 20% off
   description       = "VIP group discount"
   discount_group_id = paddle_discount_group.vip.id
+
+  # code must be 1-32 alphanumeric chars, case-insensitive — omitted here so Paddle auto-generates one
+  # enabled_for_checkout = true # defaults to true
+  # mode = "standard" # standard or custom — defaults to standard
+  # currency_code = "USD" # required when type is flat or flat_per_seat; not accepted for percentage
+  # recur = false # whether the discount applies to every billing period — defaults to false
+  # maximum_recurring_intervals = 3 # requires recur = true; omit for no limit
+  # expires_at = "2026-12-31T23:59:59Z" # RFC 3339 — omit for a discount that never expires
+  # restrict_to = ["pri_..."] # product or price IDs to restrict to — omit to apply to the whole catalog
 }
 ```
 
@@ -30,16 +39,16 @@ resource "paddle_discount" "vip_20_off" {
 
 ### Required
 
-- `name` (String) 1-500 characters.
+- `name` (String) Group name (1–500 characters).
 
 ### Optional
 
-- `timeouts` (Attributes) (see [below for nested schema](#nestedatt--timeouts))
+- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
 
 ### Read-Only
 
-- `id` (String) Paddle discount group ID (`dsg_...`).
-- `status` (String) `active` or `archived`.
+- `id` (String) Paddle discount group ID (prefix `dsg_...`).
+- `status` (String) Group status: `active` or `archived`.
 
 <a id="nestedatt--timeouts"></a>
 ### Nested Schema for `timeouts`

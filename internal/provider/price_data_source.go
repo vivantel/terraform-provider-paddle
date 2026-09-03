@@ -26,40 +26,41 @@ func (d *PriceDataSource) Metadata(_ context.Context, req datasource.MetadataReq
 
 func (d *PriceDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Look up an existing Paddle price by ID — see https://developer.paddle.com/api-reference/prices/overview.",
+		MarkdownDescription: "Look up an existing Paddle price by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/prices/overview).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Paddle price ID (`pri_...`) to look up.",
+				MarkdownDescription: "Paddle price ID (prefix `pri_...`) to look up.",
 			},
-			"product_id":  schema.StringAttribute{Computed: true},
-			"description": schema.StringAttribute{Computed: true},
-			"name":        schema.StringAttribute{Computed: true},
-			"tax_mode":    schema.StringAttribute{Computed: true},
-			"status":      schema.StringAttribute{Computed: true},
+			"product_id":  schema.StringAttribute{Computed: true, MarkdownDescription: "Paddle product ID (prefix `pro_...`) this price belongs to."},
+			"description": schema.StringAttribute{Computed: true, MarkdownDescription: "Internal price description (2–500 characters)."},
+			"name":        schema.StringAttribute{Computed: true, MarkdownDescription: "Customer-facing price name (1–150 characters)."},
+			"tax_mode":    schema.StringAttribute{Computed: true, MarkdownDescription: "Tax mode: `account_setting`, `external`, `internal`, or `location`."},
+			"status":      schema.StringAttribute{Computed: true, MarkdownDescription: "Price status: `active` or `archived`."},
 			"unit_price": schema.SingleNestedAttribute{
-				Computed: true,
+				Computed:            true,
+				MarkdownDescription: "Price per unit, in the lowest denomination.",
 				Attributes: map[string]schema.Attribute{
-					"amount":        schema.StringAttribute{Computed: true},
-					"currency_code": schema.StringAttribute{Computed: true},
+					"amount":        schema.StringAttribute{Computed: true, MarkdownDescription: "Amount in the lowest denomination as a string (e.g., \"1000\" = $10.00 for a 2-decimal currency)."},
+					"currency_code": schema.StringAttribute{Computed: true, MarkdownDescription: "ISO 4217 currency code (e.g., USD)."},
 				},
 			},
 			"billing_cycle": schema.SingleNestedAttribute{
 				Computed:            true,
 				MarkdownDescription: "Null for a one-time price.",
 				Attributes: map[string]schema.Attribute{
-					"interval":  schema.StringAttribute{Computed: true},
-					"frequency": schema.Int64Attribute{Computed: true},
+					"interval":  schema.StringAttribute{Computed: true, MarkdownDescription: "Interval unit: one of `day`, `week`, `month`, or `year`."},
+					"frequency": schema.Int64Attribute{Computed: true, MarkdownDescription: "Number of intervals between each billing."},
 				},
 			},
 			"quantity": schema.SingleNestedAttribute{
 				Computed: true,
 				Attributes: map[string]schema.Attribute{
-					"minimum": schema.Int64Attribute{Computed: true},
-					"maximum": schema.Int64Attribute{Computed: true},
+					"minimum": schema.Int64Attribute{Computed: true, MarkdownDescription: "Minimum quantity per order."},
+					"maximum": schema.Int64Attribute{Computed: true, MarkdownDescription: "Maximum quantity per order."},
 				},
 			},
-			"custom_data": schema.StringAttribute{Computed: true},
+			"custom_data": schema.StringAttribute{Computed: true, MarkdownDescription: "Arbitrary key-value metadata attached to this price."},
 		},
 	}
 }

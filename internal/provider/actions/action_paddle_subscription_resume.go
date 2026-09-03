@@ -37,25 +37,19 @@ func (a *SubscriptionResumeAction) Metadata(_ context.Context, req action.Metada
 
 func (a *SubscriptionResumeAction) Schema(_ context.Context, _ action.SchemaRequest, resp *action.SchemaResponse) {
 	resp.Schema = actionschema.Schema{
-		MarkdownDescription: "Resumes a paused Paddle subscription — see https://developer.paddle.com/api-reference/subscriptions/resume-subscription. " +
-			"Checks the subscription's current status first and skips the call entirely if it's already `active`, rather than " +
-			"erroring or re-invoking (docs/guardrails/money-moving-actions-no-blanket-retry.md). **This check is deliberately an " +
-			"exact match on `active`, not \"anything other than paused\"** — a `canceled` subscription is also not `paused`, but " +
-			"resume can't reach it from there; treating that as already-done would silently mask a real failure. Any other status " +
-			"falls through to Paddle's own response. No `paddle_subscription` resource exists in this provider " +
-			"(docs/decisions/0010-v3-scope-lifecycle-actions.md) — `subscription_id` is a plain string.",
+		MarkdownDescription: "Resumes a paused Paddle subscription. See [Paddle API Reference](https://developer.paddle.com/api-reference/subscriptions/resume-subscription). Checks the subscription's current status first and skips the call entirely if it's already `active`, rather than erroring or re-invoking. **This check is deliberately an exact match on `active`, not \"anything other than paused\"** — a `canceled` subscription is also not `paused`, but resume can't reach it from there; treating that as already-done would silently mask a real failure. Any other status falls through to Paddle's own response. No `paddle_subscription` resource exists in this provider — subscriptions are checkout-created, not declared in Terraform — so `subscription_id` is a plain string.",
 		Attributes: map[string]actionschema.Attribute{
 			"subscription_id": actionschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "The paused subscription to resume (`sub_...`).",
+				MarkdownDescription: "The paused subscription to resume (prefix `sub_...`).",
 			},
 			"effective_from": actionschema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "`immediately` or an RFC 3339 timestamp to schedule a future resume. Required — Paddle's own API treats this as required too, not merely defaulted.",
+				MarkdownDescription: "When the resume takes effect: `immediately` or an RFC 3339 timestamp to schedule a future resume. Required — Paddle's own API treats this as required too, not merely defaulted.",
 			},
 			"on_resume": actionschema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "`continue_existing_billing_period` or `start_new_billing_period`. Left to Paddle's own default (`start_new_billing_period`) if omitted.",
+				MarkdownDescription: "Behavior on resume: `continue_existing_billing_period` or `start_new_billing_period`. Left to Paddle's own default (`start_new_billing_period`) if omitted.",
 				Validators:          []validator.String{stringvalidator.OneOf("continue_existing_billing_period", "start_new_billing_period")},
 			},
 		},

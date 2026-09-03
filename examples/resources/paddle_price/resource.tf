@@ -9,12 +9,14 @@ resource "paddle_price" "monthly" {
   name        = "Monthly"            # customer-facing
 
   unit_price = {
-    amount        = "2900" # $29.00 for a 2-decimal currency
-    currency_code = "USD"
+    amount        = "2900" # $29.00 for a 2-decimal currency — lowest denomination as a string
+    currency_code = "USD"  # ISO 4217 code
   }
 
   billing_cycle = {
-    interval  = "month"
+    interval  = "month" # day, week, month, or year
     frequency = 1
   }
+
+  # tax_mode = "account_setting" # account_setting, external, internal, or location — defaults to account_setting
 }

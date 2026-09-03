@@ -3,27 +3,50 @@
 page_title: "paddle_subscription_charge Action - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  Creates a one-time charge against a Paddle subscription — see https://developer.paddle.com/api-reference/subscriptions/create-subscription-charge. Catalog prices only (price_id + quantity) — Paddle's API also accepts two inline non-catalog item shapes (an ad hoc price against an existing product, or a fully inline product+price); those aren't supported by this action yet, deliberately scoped out rather than half-modeled (docs/plans/paddle-provider-v3.md Step 2). Before charging, checks whether an equivalent charge already exists and treats a match as already-done — best-effort, not a guarantee: two deliberate, genuinely separate charges for the identical items would look identical to this check too, and neither of Paddle's own search mechanisms (list-transactions, the next-renewal preview) is guaranteed instant-consistent with a charge just created — confirmed the hard way, 2026-08-11, with a real duplicate charge created seconds after the first during testing. This check now retries a few times with a short wait before concluding "no match, proceed", which meaningfully shrinks but does not eliminate that race window (docs/guardrails/money-moving-actions-no-blanket-retry.md). The check itself differs by effective_from: an immediately charge is checked by searching transactions; a next_billing_period charge is checked against the subscription's next-renewal preview instead, since Paddle creates no queryable transaction for it until the subscription actually renews.
+  Creates a one-time charge against a Paddle subscription. See Paddle API Reference https://developer.paddle.com/api-reference/subscriptions/create-subscription-charge. Catalog prices only (price_id + quantity) — Paddle's API also accepts two inline non-catalog item shapes (an ad hoc price against an existing product, or a fully inline product+price); those aren't supported by this action yet, deliberately scoped out rather than half-modeled. Before charging, checks whether an equivalent charge already exists and treats a match as already-done — best-effort, not a guarantee: two deliberate, genuinely separate charges for the identical items would look identical to this check too, and neither of Paddle's own search mechanisms (list-transactions, the next-renewal preview) is guaranteed instant-consistent with a charge just created — confirmed the hard way with a real duplicate charge created seconds after the first during testing. This check now retries a few times with a short wait before concluding "no match, proceed", which meaningfully shrinks but does not eliminate that race window. The check itself differs by effective_from: an immediately charge is checked by searching transactions; a next_billing_period charge is checked against the subscription's next-renewal preview instead, since Paddle creates no queryable transaction for it until the subscription actually renews.
 ---
 
 # paddle_subscription_charge (Action)
 
-Creates a one-time charge against a Paddle subscription — see https://developer.paddle.com/api-reference/subscriptions/create-subscription-charge. **Catalog prices only** (`price_id` + `quantity`) — Paddle's API also accepts two inline non-catalog item shapes (an ad hoc price against an existing product, or a fully inline product+price); those aren't supported by this action yet, deliberately scoped out rather than half-modeled (docs/plans/paddle-provider-v3.md Step 2). Before charging, checks whether an equivalent charge already exists and treats a match as already-done — best-effort, **not a guarantee**: two deliberate, genuinely separate charges for the identical items would look identical to this check too, and neither of Paddle's own search mechanisms (list-transactions, the next-renewal preview) is guaranteed instant-consistent with a charge just created — confirmed the hard way, 2026-08-11, with a real duplicate charge created seconds after the first during testing. This check now retries a few times with a short wait before concluding "no match, proceed", which meaningfully shrinks but does not eliminate that race window (docs/guardrails/money-moving-actions-no-blanket-retry.md). The check itself differs by `effective_from`: an `immediately` charge is checked by searching transactions; a `next_billing_period` charge is checked against the subscription's next-renewal preview instead, since Paddle creates no queryable transaction for it until the subscription actually renews.
+Creates a one-time charge against a Paddle subscription. See [Paddle API Reference](https://developer.paddle.com/api-reference/subscriptions/create-subscription-charge). **Catalog prices only** (`price_id` + `quantity`) — Paddle's API also accepts two inline non-catalog item shapes (an ad hoc price against an existing product, or a fully inline product+price); those aren't supported by this action yet, deliberately scoped out rather than half-modeled. Before charging, checks whether an equivalent charge already exists and treats a match as already-done — best-effort, **not a guarantee**: two deliberate, genuinely separate charges for the identical items would look identical to this check too, and neither of Paddle's own search mechanisms (list-transactions, the next-renewal preview) is guaranteed instant-consistent with a charge just created — confirmed the hard way with a real duplicate charge created seconds after the first during testing. This check now retries a few times with a short wait before concluding "no match, proceed", which meaningfully shrinks but does not eliminate that race window. The check itself differs by `effective_from`: an `immediately` charge is checked by searching transactions; a `next_billing_period` charge is checked against the subscription's next-renewal preview instead, since Paddle creates no queryable transaction for it until the subscription actually renews.
 
+## Example Usage
 
+```terraform
+# See examples/lookup-then-act/main.tf for the full
+# `resource "terraform_data" { lifecycle { action_trigger { ... } } }`
+# wiring that actually invokes this action.
+
+action "paddle_subscription_charge" "example" {
+  config {
+    subscription_id = "sub_..."     # replace with a real subscription ID
+    effective_from  = "immediately" # immediately or next_billing_period
+
+    items = [
+      {
+        price_id = "pri_..." # replace with a real catalog price ID
+        quantity = 1
+      },
+    ]
+
+    # on_payment_failure = "prevent_change" # prevent_change or apply_change
+    # receipt_data       = "Thank you for your purchase!" # max 1500 chars, only valid when effective_from is "immediately"
+  }
+}
+```
 
 <!-- action schema generated by tfplugindocs -->
 ## Schema
 
 ### Required
 
-- `effective_from` (String) `immediately` or `next_billing_period`. Required, matching Paddle's own API (this field isn't optional there either).
-- `items` (Attributes List) 1-100 catalog price line items to charge. (see [below for nested schema](#nestedatt--items))
-- `subscription_id` (String) The subscription to charge (`sub_...`).
+- `effective_from` (String) When the charge takes effect: `immediately` or `next_billing_period`. Required, matching Paddle's own API (this field isn't optional there either).
+- `items` (Attributes List) 1–100 catalog price line items to charge. (see [below for nested schema](#nestedatt--items))
+- `subscription_id` (String) The subscription to charge (prefix `sub_...`).
 
 ### Optional
 
-- `on_payment_failure` (String) `prevent_change` or `apply_change`. Left to Paddle's own default (`prevent_change`) if omitted.
+- `on_payment_failure` (String) Behavior on payment failure: `prevent_change` or `apply_change`. Left to Paddle's own default (`prevent_change`) if omitted.
 - `receipt_data` (String) Notes shown to the customer on the receipt/invoice. Only valid when `effective_from` is `immediately` — not cross-field-validated here, Paddle's own API error is authoritative. Max 1500 characters.
 
 <a id="nestedatt--items"></a>
@@ -31,5 +54,5 @@ Creates a one-time charge against a Paddle subscription — see https://develope
 
 Required:
 
-- `price_id` (String) An existing catalog price (`pri_...`) — see `paddle_price`.
+- `price_id` (String) An existing catalog price (prefix `pri_...`) — see `paddle_price`.
 - `quantity` (Number) Must be at least 1.

@@ -3,26 +3,31 @@
 page_title: "paddle_notification_setting Resource - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  A Paddle notification setting (a webhook or email destination) — see https://developer.paddle.com/api-reference/notification-settings/overview. Unlike paddle_product/paddle_price/paddle_discount/paddle_discount_group, Paddle has a real hard delete for this entity; terraform destroy removes it entirely rather than archiving it.
+  A Paddle notification setting is a webhook URL or email destination that receives event payloads. See Paddle API Reference https://developer.paddle.com/api-reference/notification-settings/overview. Unlike paddle_product/paddle_price/paddle_discount/paddle_discount_group, Paddle has a real hard delete for this entity; terraform destroy removes it entirely rather than archiving it.
 ---
 
 # paddle_notification_setting (Resource)
 
-A Paddle notification setting (a webhook or email destination) — see https://developer.paddle.com/api-reference/notification-settings/overview. Unlike `paddle_product`/`paddle_price`/`paddle_discount`/`paddle_discount_group`, Paddle has a real hard delete for this entity; `terraform destroy` removes it entirely rather than archiving it.
+A Paddle notification setting is a webhook URL or email destination that receives event payloads. See [Paddle API Reference](https://developer.paddle.com/api-reference/notification-settings/overview). Unlike `paddle_product`/`paddle_price`/`paddle_discount`/`paddle_discount_group`, Paddle has a real hard delete for this entity; `terraform destroy` removes it entirely rather than archiving it.
 
 ## Example Usage
 
 ```terraform
 resource "paddle_notification_setting" "orders" {
   description = "Order processing webhook"
-  type        = "url"
-  destination = "https://example.com/webhooks/paddle"
+  type        = "url"                                 # email or url
+  destination = "https://example.com/webhooks/paddle" # webhook URL or email address
 
   subscribed_events = [
     "transaction.billed",
     "transaction.paid",
     "subscription.created",
   ]
+
+  # active = true # whether Paddle should try to deliver — defaults to true
+  # api_version = 1 # API version for event payloads — omit for account default
+  # include_sensitive_fields = false # defaults to false
+  # traffic_source = "platform" # platform, simulation, or all — defaults to platform
 }
 ```
 
@@ -31,23 +36,23 @@ resource "paddle_notification_setting" "orders" {
 
 ### Required
 
-- `description` (String) 1-500 characters.
-- `destination` (String) Webhook URL (for `type = "url"`) or email address (for `type = "email"`). 1-2048 characters.
-- `subscribed_events` (List of String) Event type names to subscribe to (e.g. `transaction.billed`). Paddle's API is the source of truth for valid values — see https://developer.paddle.com/webhooks/overview for the full list; this schema doesn't replicate it.
-- `type` (String) `email` or `url`. Immutable after create — changing this replaces the notification setting.
+- `description` (String) Description (1–500 characters).
+- `destination` (String) Webhook URL (for `type = "url"`) or email address (for `type = "email"`). 1–2048 characters.
+- `subscribed_events` (List of String) Event type names to subscribe to (e.g., `transaction.billed`). Paddle's API is the source of truth for valid values — see [Paddle Webhooks Overview](https://developer.paddle.com/webhooks/overview) for the full list; this schema does not replicate it.
+- `type` (String) Notification type: `email` or `url`. Immutable after create — changing this replaces the notification setting.
 
 ### Optional
 
 - `active` (Boolean) Whether Paddle should try to deliver events to this destination. Defaults to `true`. Not settable at create per Paddle's API — if set to `false` here, this resource issues an immediate follow-up update right after creation to apply it.
-- `api_version` (Number) API version used for event payloads sent to this destination. Omit for the account default. Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle returns its own default (e.g. 1) even when this is omitted rather than leaving it null, so modeling this as Optional-only produced "Provider produced inconsistent result after apply" on the very first real Create — the same class of fix as `paddle_discount`'s `code`.
+- `api_version` (Number) API version used for event payloads sent to this destination. Omit for the account default. Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle returns its own default (e.g., 1) even when this is omitted rather than leaving it null, so modeling this as Optional-only produced "Provider produced inconsistent result after apply" on the very first real Create — the same class of fix as `paddle_discount`'s `code`.
 - `include_sensitive_fields` (Boolean) Whether sensitive fields are included in event payloads. Defaults to `false`.
-- `timeouts` (Attributes) (see [below for nested schema](#nestedatt--timeouts))
-- `traffic_source` (String) `platform`, `simulation`, or `all`. Defaults to `platform`.
+- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
+- `traffic_source` (String) Traffic source: `platform`, `simulation`, or `all`. Defaults to `platform`.
 
 ### Read-Only
 
 - `endpoint_secret_key` (String, Sensitive) Secret key Paddle uses to sign webhook payloads sent to this destination.
-- `id` (String) Paddle notification setting ID (`ntfset_...`).
+- `id` (String) Paddle notification setting ID (prefix `ntfset_...`).
 
 <a id="nestedatt--timeouts"></a>
 ### Nested Schema for `timeouts`

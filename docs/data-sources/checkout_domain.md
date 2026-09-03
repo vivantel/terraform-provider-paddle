@@ -3,12 +3,12 @@
 page_title: "paddle_checkout_domain Data Source - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  Look up an existing Paddle checkout domain by ID — see https://developer.paddle.com/api-reference/checkout-domains/overview. There is no matching paddle_checkout_domain resource: Paddle's API has no create or update operation for this entity at all — a domain can only be added via the dashboard (Paddle > Checkout > Website approval > Domain approval), confirmed against the real API reference rather than assumed. This data source is read-only lookup for a domain approved that way.
+  Look up an existing Paddle checkout domain by ID. See Paddle API Reference https://developer.paddle.com/api-reference/checkout-domains/overview. There is no matching paddle_checkout_domain resource: Paddle's API has no create or update operation for this entity at all — a domain can only be added via the dashboard (Paddle > Checkout > Website approval > Domain approval), confirmed against the real API reference rather than assumed. This data source is read-only lookup for a domain approved that way.
 ---
 
 # paddle_checkout_domain (Data Source)
 
-Look up an existing Paddle checkout domain by ID — see https://developer.paddle.com/api-reference/checkout-domains/overview. There is no matching `paddle_checkout_domain` resource: Paddle's API has no create or update operation for this entity at all — a domain can only be added via the dashboard (Paddle > Checkout > Website approval > Domain approval), confirmed against the real API reference rather than assumed. This data source is read-only lookup for a domain approved that way.
+Look up an existing Paddle checkout domain by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/checkout-domains/overview). There is no matching `paddle_checkout_domain` resource: Paddle's API has no create or update operation for this entity at all — a domain can only be added via the dashboard (Paddle > Checkout > Website approval > Domain approval), confirmed against the real API reference rather than assumed. This data source is read-only lookup for a domain approved that way.
 
 ## Example Usage
 
@@ -27,14 +27,14 @@ output "checkout_domain_status" {
 
 ### Required
 
-- `id` (String) Paddle checkout domain ID (`chedom_...`) to look up.
+- `id` (String) Paddle checkout domain ID (prefix `chedom_...`) to look up.
 
 ### Read-Only
 
 - `created_at` (String) RFC 3339 date-time this domain was created, set by Paddle.
-- `domain` (String) The domain name (FQDN), e.g. `checkout.example.com`.
+- `domain` (String) The domain name (FQDN), e.g., `checkout.example.com`.
 - `payment_method_verification` (Attributes) (see [below for nested schema](#nestedatt--payment_method_verification))
-- `status` (String) `pending_review`, `in_review`, `approved`, `rejected`, or `action_required`.
+- `status` (String) Domain status: `pending_review`, `in_review`, `approved`, `rejected`, or `action_required`.
 - `updated_at` (String) RFC 3339 date-time this domain was last updated, set by Paddle.
 
 <a id="nestedatt--payment_method_verification"></a>
@@ -49,4 +49,4 @@ Read-Only:
 
 Read-Only:
 
-- `status` (String) `verified` or `unverified`.
+- `status` (String) Apple Pay verification status: `verified` or `unverified`.

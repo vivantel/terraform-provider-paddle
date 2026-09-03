@@ -3,12 +3,12 @@
 page_title: "paddle_discount Data Source - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  Look up an existing Paddle discount by ID — see https://developer.paddle.com/api-reference/discounts/overview.
+  Look up an existing Paddle discount by ID. See Paddle API Reference https://developer.paddle.com/api-reference/discounts/overview.
 ---
 
 # paddle_discount (Data Source)
 
-Look up an existing Paddle discount by ID — see https://developer.paddle.com/api-reference/discounts/overview.
+Look up an existing Paddle discount by ID. See [Paddle API Reference](https://developer.paddle.com/api-reference/discounts/overview).
 
 ## Example Usage
 
@@ -27,25 +27,25 @@ output "discount_code" {
 
 ### Required
 
-- `id` (String) Paddle discount ID (`dsc_...`) to look up.
+- `id` (String) Paddle discount ID (prefix `dsc_...`) to look up.
 
 ### Read-Only
 
-- `amount` (String)
-- `code` (String)
-- `created_at` (String)
-- `currency_code` (String)
-- `custom_data` (String)
-- `description` (String)
-- `discount_group_id` (String)
-- `enabled_for_checkout` (Boolean)
-- `expires_at` (String)
-- `maximum_recurring_intervals` (Number)
-- `mode` (String)
-- `recur` (Boolean)
-- `restrict_to` (List of String)
-- `status` (String)
-- `times_used` (Number)
-- `type` (String)
-- `updated_at` (String)
-- `usage_limit` (Number)
+- `amount` (String) Amount: `"0.01"`–`"100"` for `percentage`; lowest currency denomination for `flat`/`flat_per_seat` (e.g., `"1000"` = $10.00 for a 2-decimal currency).
+- `code` (String) Discount code (1–32 alphanumeric characters, case-insensitive).
+- `created_at` (String) RFC 3339 date-time this discount was created, set by Paddle.
+- `currency_code` (String) ISO 4217 currency code. Present when `type` is `flat` or `flat_per_seat`.
+- `custom_data` (String) Arbitrary key-value metadata attached to this discount.
+- `description` (String) Internal discount description (1–500 characters).
+- `discount_group_id` (String) Paddle discount group ID (prefix `dsg_...`), if this discount belongs to one.
+- `enabled_for_checkout` (Boolean) Whether this discount is enabled at checkout.
+- `expires_at` (String) RFC 3339 date-time this discount expires. Omitted for a non-expiring discount.
+- `maximum_recurring_intervals` (Number) Number of billing periods the discount recurs for. Present when `recur` is `true`.
+- `mode` (String) Discount mode: `standard` or `custom`.
+- `recur` (Boolean) Whether the discount applies to every billing period, not just the first.
+- `restrict_to` (List of String) Product or price IDs this discount is restricted to. Omitted to apply to the whole catalog.
+- `status` (String) Discount status: `active` or `archived`.
+- `times_used` (Number) Number of times this discount has been redeemed.
+- `type` (String) Discount type: `flat`, `flat_per_seat`, or `percentage`.
+- `updated_at` (String) RFC 3339 date-time this discount was last updated, set by Paddle.
+- `usage_limit` (Number) Maximum number of redemptions. Omitted for unlimited.
