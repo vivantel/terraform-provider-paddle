@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0] - 2026-09-04
+
+Adds two new capabilities from Terraform's newer plugin-framework surface (an ephemeral resource, and resource identity plus a list resource), a contract-diff check against Paddle's own OpenAPI spec, and closes a couple of real gaps found along the way — one in `paddle_adjustment`'s duplicate-check, and one in this repo's own sweep automation that had quietly been failing for three weeks.
+
+### Added
+
+- A forward-only contract check (`internal/client/contract_test.go`) diffing this provider's hand-written client structs against Paddle's own vendored OpenAPI spec, targeting the exact bug class that's bitten this provider before (a field modeled as flat instead of nested, a wrong JSON path) — runs on every `go test ./...`, no new CI job needed.
+- `paddle_notification_setting_secret`, a new ephemeral resource that fetches a notification setting's webhook signing secret without ever writing it to Terraform state. `paddle_notification_setting`'s (and its data source's) `endpoint_secret_key` attribute is now deprecated in favor of it — `Sensitive` only ever redacted CLI/log output, never state — though it still works unchanged for existing configs.
+- Resource identity and a matching `list` resource for `paddle_product`, enabling `terraform query` bulk-discovery of existing products and import-by-identity (`import { identity = { id = "..." } }`) alongside the existing plain-ID import.
+
+### Fixed
+
+- `paddle_adjustment`'s duplicate-check now retries with backoff against Paddle's search-index lag, the same protection `paddle_subscription_charge` already had for the identical, previously-confirmed race — closing a real asymmetry between the two actions.
+- This repo's own scheduled sweep automation (`sweep.yaml`) had failed every run for three straight weeks, traced to a retry-tuning regression that gave every sweep API call up to a 10-minute retry budget, letting a handful of stubborn calls consume the whole job before the other registered sweepers ever got a turn. A second, independent bug found investigating the same failure — the sweeper always attempted to cancel `past_due` transactions, a status Paddle's API never permits canceling — compounded it further. Fixing both together cleared a 91-transaction backlog in under 30 seconds where every run since mid-August had timed out.
+
 ## [0.6.1] - 2026-09-03
 
 A patch release: no schema, attribute, or behavior changes for existing configurations. Provider docs (descriptions and examples) got a full rewrite for readability and completeness, a dependency CVE got patched, CI's broken lint job got fixed, and post-release verification left open after `v0.6.0` got closed out.
