@@ -15,7 +15,28 @@ import "testing"
 // (observed: exactly ~120s per leaked transaction — a full ~60s retry
 // budget burned on Cancel, then another ~60s on the GetTransaction
 // fallback).
-
+//
+// **Correction, 2026-09-04**: the 2026-08-12 correction below this
+// comment (widening back to "every status but completed") was itself
+// wrong about "past_due" specifically — found via a real sweep run
+// (fix/sweep-retry-tuning's own verification run) where 21 of 21 leaked
+// past_due transactions each burned this repo's new, much shorter
+// sweep-tuned retry budget on a doomed Cancel attempt before falling
+// through, which is exactly what starved every other registered sweeper
+// out of the same 30-minute job. Confirmed directly against Paddle's own
+// spec (third_party/paddle-openapi/v1/openapi.yaml, update-transaction's
+// description), not inferred from the timeout symptom alone: "You can
+// update transactions that are draft or ready. billed and completed
+// transactions are considered records for tax and legal purposes, so
+// they can't be changed... Cancel a billed transaction by sending a
+// PATCH request to set status to canceled." past_due is none of
+// draft/ready/billed — it's Paddle's own auto-set, readOnly terminal-ish
+// status for a failed/overdue payment, not a status the update-transaction
+// PATCH accepts a transition away from at all. A Cancel attempt against
+// one is exactly as guaranteed-to-fail as one against "completed" was —
+// the credit/refund fallback is the only real path (adjustments are a
+// separate operation, valid against past_due — see
+// action_paddle_adjustment.go's transaction_id doc comment).
 func TestShouldAttemptCancel(t *testing.T) {
 	cases := []struct {
 		status string
@@ -24,7 +45,7 @@ func TestShouldAttemptCancel(t *testing.T) {
 		{"draft", true},
 		{"ready", true},
 		{"billed", true},
-		{"past_due", true},
+		{"past_due", false},
 		{"completed", false},
 		{"canceled", true}, // already canceled — Cancel is a safe no-op-ish attempt (IsNotFound/already-canceled tolerance lives in cancelOrCreditTransaction itself), not this function's job to special-case.
 		{"", true},         // unknown/empty status — fail open to the old behavior (attempt Cancel) rather than guess.
