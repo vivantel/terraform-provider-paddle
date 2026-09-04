@@ -28,19 +28,20 @@ import (
 // shape sweep.yaml's `go test ./internal/provider -sweep=sandbox ...`
 // uses — sweep.yaml deliberately doesn't set TF_ACC=1, it's a distinct
 // invocation from the acceptance-test suite, so the TF_ACC check alone
-// would silently miss it) — see
-// client.RelaxRetryTuningForAcceptanceTests' own comment for why: this
-// repo's acceptance-test suite (and the sweeper, which can make many
-// sequential calls cleaning up a real backlog — the exact rate-limit
-// pain that originally motivated this release's timeouts{} feature)
-// runs many calls back-to-back against one shared sandbox account and
-// can trigger sustained rate-limiting the client's production-sized
-// retry defaults aren't built to ride out, found via a real repeated CI
-// failure, 2026-08-12. Set before resource.TestMain(m) runs any test —
-// the package-var mutation only takes effect if it happens before the
-// first client call any test (or sweeper) makes.
+// would silently miss it). The two get *different* relaxed tuning, not
+// the same one: client.RelaxRetryTuningForAcceptanceTests (a handful of
+// precious calls, worth waiting up to 10 minutes on any one) versus
+// client.RelaxRetryTuningForSweepRun (dozens of best-effort calls across
+// a backlog, each already tolerant of its own failure — see that
+// function's own comment for the real CI timeout this distinction
+// fixes, found 2026-09-03). Set before resource.TestMain(m) runs any
+// test — the package-var mutation only takes effect if it happens
+// before the first client call any test (or sweeper) makes.
 func TestMain(m *testing.M) {
-	if os.Getenv("TF_ACC") != "" || isSweepRun() {
+	switch {
+	case isSweepRun():
+		client.RelaxRetryTuningForSweepRun()
+	case os.Getenv("TF_ACC") != "":
 		client.RelaxRetryTuningForAcceptanceTests()
 	}
 	resource.TestMain(m)
@@ -181,25 +182,40 @@ func isAccTestCustomerEmail(email string) bool {
 // transaction is already gone) as success, same tolerance every other
 // sweeper in this file already has for its own entity.
 // shouldAttemptCancel reports whether cancelOrCreditTransaction should
-// even try CancelTransaction before falling back to credit/refund — false
-// only for "completed", the one status a cancel attempt is *guaranteed*
-// to be rejected for (a paid transaction can only be refunded/credited,
-// never canceled outright). Motivated by a real sweep run, 2026-08-11,
-// against a leaked *completed* transaction from an earlier test run: the
-// doomed Cancel attempt still went through the client's full
-// retry-with-backoff path before falling through to the working
-// credit/refund path, wasting time for no benefit — an outcome already
-// known in advance from the status alone. **Correction, 2026-08-12**: a
-// *different* real backlog (the same day, a different batch) turned out
-// to be "billed", not "completed" — don't assume every leaked
-// subscription-charge transaction is "completed"; this function only
-// special-cases the one status where skipping Cancel is actually safe.
-// Every other status still attempts Cancel first, unchanged:
-// cancel-then-fall-back-to-credit remains the right shape for
-// draft/ready/billed/past_due, where whether Cancel will succeed isn't
-// knowable without asking Paddle.
+// even try CancelTransaction before falling back to credit/refund —
+// false for any status a cancel attempt is *guaranteed* to be rejected
+// for, per Paddle's own documented update-transaction contract
+// (third_party/paddle-openapi/v1/openapi.yaml): "You can update
+// transactions that are draft or ready. billed and completed
+// transactions are considered records for tax and legal purposes, so
+// they can't be changed... Cancel a billed transaction by sending a
+// PATCH request to set status to canceled." "completed" and "past_due"
+// are both excluded here for that reason — "completed" can't be changed
+// at all, and "past_due" is Paddle's own auto-set, readOnly terminal-ish
+// status (not draft/ready/billed), never a status the PATCH accepts a
+// transition away from. Every other status still attempts Cancel first,
+// unchanged: cancel-then-fall-back-to-credit remains the right shape for
+// draft/ready/billed, where whether Cancel will succeed isn't knowable
+// without asking Paddle.
+//
+// Motivated by a real sweep run, 2026-08-11, against a leaked
+// *completed* transaction from an earlier test run: the doomed Cancel
+// attempt still went through the client's full retry-with-backoff path
+// before falling through to the working credit/refund path, wasting
+// time for no benefit — an outcome already known in advance from the
+// status alone. **Correction, 2026-09-04**: the same reasoning applies
+// to "past_due", found the same way — a real sweep run
+// (fix/sweep-retry-tuning's own verification run) showed 21 of 21 leaked
+// past_due transactions each burning this sweeper's full retry budget on
+// a doomed Cancel before falling through, which is what starved every
+// other registered sweeper out of the same 30-minute job. A prior
+// 2026-08-12 correction here had widened this back to "every status but
+// completed" after a *different* backlog turned out to be "billed", not
+// "completed" — that correction was right about billed being cancelable,
+// but never separately checked past_due's own cancelability against the
+// spec.
 func shouldAttemptCancel(status string) bool {
-	return status != "completed"
+	return status != "completed" && status != "past_due"
 }
 
 func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txn client.Transaction) error {
@@ -223,8 +239,8 @@ func cancelOrCreditTransaction(ctx context.Context, c *client.Client, txn client
 			return fmt.Errorf("cancel timed out, not attempting the credit/refund fallback (likely doomed the same way): %w", cancelErr)
 		}
 	}
-	// Falls through here either because Cancel was skipped (status ==
-	// "completed", see shouldAttemptCancel) or because it was attempted
+	// Falls through here either because Cancel was skipped ("completed"
+	// or "past_due", see shouldAttemptCancel) or because it was attempted
 	// and failed with a real, fast rejection (not a timeout — see above;
 	// for a "billed" transaction this is the normal, expected path when
 	// Cancel is rejected for some other reason). Paddle's adjustment
