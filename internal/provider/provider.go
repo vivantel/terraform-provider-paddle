@@ -165,14 +165,21 @@ func (p *PaddleProvider) EphemeralResources(_ context.Context) []func() ephemera
 	}
 }
 
-// ListResources — paddle_product only for now: list resources need
-// resource identity implemented on their target resource first (Terraform
-// 1.14+; see product_resource.go's IdentitySchema comment), which only
-// paddle_product has so far. Extending to the other four resources is one
-// IdentitySchema + one *_list_resource.go file each, no new plumbing.
+// ListResources — paddle_product and paddle_price so far: list resources
+// need resource identity implemented on their target resource first
+// (Terraform 1.14+; see product_resource.go's IdentitySchema comment).
+// paddle_discount/discount_group/notification_setting don't have identity
+// yet — deliberately deferred: price/product are the pair with a real
+// bulk-import workflow gap (products and prices always pair up, and prices
+// are usually the most numerous catalog object per account); the other
+// three tend to number in the single digits per account, where hand-import
+// isn't the problem this feature solves. Extending to any of them later is
+// one IdentitySchema + one *_list_resource.go file each, no new plumbing —
+// only worth it if real usage actually asks for it.
 func (p *PaddleProvider) ListResources(_ context.Context) []func() list.ListResource {
 	return []func() list.ListResource{
 		NewProductListResource,
+		NewPriceListResource,
 	}
 }
 

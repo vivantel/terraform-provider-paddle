@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/identityschema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
@@ -21,6 +22,7 @@ import (
 
 var _ resource.Resource = &PriceResource{}
 var _ resource.ResourceWithImportState = &PriceResource{}
+var _ resource.ResourceWithIdentity = &PriceResource{}
 
 func NewPriceResource() resource.Resource {
 	return &PriceResource{}
@@ -77,7 +79,7 @@ func (r *PriceResource) Metadata(_ context.Context, req resource.MetadataRequest
 
 func (r *PriceResource) Schema(ctx context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "A Paddle price defines a specific amount and billing cadence attached to a product. See [Paddle API Reference](https://developer.paddle.com/api-reference/prices/overview). Paddle has no hard delete for prices; `terraform destroy` archives the price instead (status becomes `archived`).",
+		MarkdownDescription: "A Paddle price defines a specific amount and billing cadence attached to a product. See [Paddle API Reference](https://developer.paddle.com/api-reference/prices/overview). Paddle has no hard delete for prices; `terraform destroy` archives the price instead (status becomes `archived`). Supports resource identity and import by identity (`import { identity = { id = \"pri_...\" } }`), and a matching `list` block for bulk-discovering existing prices via `terraform query` — see the README's \"List resources\" section.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -176,6 +178,22 @@ func (r *PriceResource) Schema(ctx context.Context, _ resource.SchemaRequest, re
 			},
 			"custom_data": customDataAttribute(),
 			"timeouts":    describedTimeouts(ctx),
+		},
+	}
+}
+
+// IdentitySchema — id alone, prefix pri_..., stable for the resource's whole
+// lifetime (Paddle never reassigns a price's ID). Same reasoning as
+// product_resource.go's IdentitySchema: backs both import-by-identity
+// (ImportState below) and this resource's list resource counterpart
+// (price_list_resource.go).
+func (r *PriceResource) IdentitySchema(_ context.Context, _ resource.IdentitySchemaRequest, resp *resource.IdentitySchemaResponse) {
+	resp.IdentitySchema = identityschema.Schema{
+		Attributes: map[string]identityschema.Attribute{
+			"id": identityschema.StringAttribute{
+				RequiredForImport: true,
+				Description:       "Paddle price ID (prefix pri_...).",
+			},
 		},
 	}
 }
@@ -321,6 +339,7 @@ func (r *PriceResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	resp.Diagnostics.Append(resp.Identity.SetAttribute(ctx, path.Root("id"), plan.ID.ValueString())...)
 }
 
 func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -363,6 +382,7 @@ func (r *PriceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(resp.Identity.SetAttribute(ctx, path.Root("id"), state.ID.ValueString())...)
 }
 
 func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -402,6 +422,7 @@ func (r *PriceResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+	resp.Diagnostics.Append(resp.Identity.SetAttribute(ctx, path.Root("id"), state.ID.ValueString())...)
 }
 
 func (r *PriceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -426,5 +447,9 @@ func (r *PriceResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 }
 
 func (r *PriceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	// Supports both `terraform import`/a config block's plain `id` (the
+	// long-standing path) and importing by identity (Terraform 1.12+,
+	// import { identity = { id = "pri_..." } }) — the helper picks whichever
+	// req actually carries. Same change as product_resource.go's ImportState.
+	resource.ImportStatePassthroughWithIdentity(ctx, path.Root("id"), path.Root("id"), req, resp)
 }
