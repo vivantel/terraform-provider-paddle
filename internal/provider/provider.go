@@ -47,7 +47,7 @@ func (p *PaddleProvider) Metadata(_ context.Context, _ provider.MetadataRequest,
 
 func (p *PaddleProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "The Paddle provider manages Paddle Billing catalog resources (products, prices, discounts, discount groups, notification settings); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries (data sources only); provides actions for one-time lifecycle operations (adjustments, subscription cancel/pause/resume/charge, notification replay) that don't have a resource lifecycle of their own; fetches secret-shaped values (currently a notification setting's webhook signing secret) as ephemeral resources, never written to Terraform state; and supports `terraform query` list blocks (currently `paddle_product` only) for bulk-discovering existing infrastructure to import. Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
+		MarkdownDescription: "The Paddle provider manages Paddle Billing catalog resources (products, prices, discounts, discount groups, notification settings); looks up checkout domains, subscriptions, transactions, customers, account events, and notification deliveries (data sources only); provides actions for one-time lifecycle operations (adjustments, subscription cancel/pause/resume/charge, notification replay) that don't have a resource lifecycle of their own; fetches secret-shaped values (currently a notification setting's webhook signing secret) as ephemeral resources, never written to Terraform state; and supports `terraform query` list blocks (currently `paddle_product` and `paddle_price`) for bulk-discovering existing infrastructure to import. Unofficial — talks directly to Paddle's public REST API, no third party in the request path.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
 				MarkdownDescription: "Paddle API key. Can also be set via the `PADDLE_API_KEY` environment variable.",
@@ -165,14 +165,21 @@ func (p *PaddleProvider) EphemeralResources(_ context.Context) []func() ephemera
 	}
 }
 
-// ListResources — paddle_product only for now: list resources need
-// resource identity implemented on their target resource first (Terraform
-// 1.14+; see product_resource.go's IdentitySchema comment), which only
-// paddle_product has so far. Extending to the other four resources is one
-// IdentitySchema + one *_list_resource.go file each, no new plumbing.
+// ListResources — paddle_product and paddle_price so far: list resources
+// need resource identity implemented on their target resource first
+// (Terraform 1.14+; see product_resource.go's IdentitySchema comment).
+// paddle_discount/discount_group/notification_setting don't have identity
+// yet — deliberately deferred: price/product are the pair with a real
+// bulk-import workflow gap (products and prices always pair up, and prices
+// are usually the most numerous catalog object per account); the other
+// three tend to number in the single digits per account, where hand-import
+// isn't the problem this feature solves. Extending to any of them later is
+// one IdentitySchema + one *_list_resource.go file each, no new plumbing —
+// only worth it if real usage actually asks for it.
 func (p *PaddleProvider) ListResources(_ context.Context) []func() list.ListResource {
 	return []func() list.ListResource{
 		NewProductListResource,
+		NewPriceListResource,
 	}
 }
 

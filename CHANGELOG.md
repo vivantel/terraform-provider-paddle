@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0] - 2026-09-09
+
+Extends resource identity and list-resource support (added for `paddle_product` in 0.7.0) to `paddle_price` — the pair that actually has a bulk-import problem, since prices are usually the most numerous catalog object per account — plus a repo-discoverability pass.
+
+### Added
+
+- Resource identity and a matching `list` resource for `paddle_price`, enabling `terraform query` bulk-discovery of existing prices and import-by-identity, the same shape `paddle_product` already has. `paddle_discount`/`paddle_discount_group`/`paddle_notification_setting` remain deliberately deferred — they tend to number in the single digits per account, where hand-import isn't the problem this feature solves.
+
+### Documentation
+
+- README now leads with concrete capability stats (5 resources, ~15 data sources, 6 actions, ephemeral/identity/list support, real-sandbox-verified every release) instead of "Unofficial" as the first framing a reader sees, plus a CI/Release/Registry/License badge row. Repo description, topics, and homepage updated to match the provider's actual current scope, closing a real discoverability gap (0 GitHub topics set, a stale week-one description).
+
 ## [0.7.0] - 2026-09-04
 
 Adds two new capabilities from Terraform's newer plugin-framework surface (an ephemeral resource, and resource identity plus a list resource), a contract-diff check against Paddle's own OpenAPI spec, and closes a couple of real gaps found along the way — one in `paddle_adjustment`'s duplicate-check, and one in this repo's own sweep automation that had quietly been failing for three weeks.

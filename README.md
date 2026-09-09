@@ -184,7 +184,7 @@ ephemeral "paddle_notification_setting_secret" "webhook" {
 
 Terraform requires `>= 1.14.0` for [`list` blocks](https://developer.hashicorp.com/terraform/language/query) and the `terraform query` command — the same floor this provider already requires for Actions above, so no separate version bump is needed.
 
-`paddle_product` supports resource identity (Terraform `>= 1.12.0`) and a matching `list` block, so you can discover every product already in the account and generate `import` blocks (or full resource config, with `include_resource = true`) for it instead of hand-writing one `paddle_product` block per existing product:
+`paddle_product` and `paddle_price` support resource identity (Terraform `>= 1.12.0`) and a matching `list` block, so you can discover every product or price already in the account and generate `import` blocks (or full resource config, with `include_resource = true`) for them instead of hand-writing one block per existing object:
 
 ```console
 $ terraform query -query-file=list-products.tfquery.hcl
@@ -201,7 +201,7 @@ list "paddle_product" "all" {
 }
 ```
 
-Paddle's list-products endpoint takes no filters, so `config {}` is always empty here — every product in the account comes back. The other four resources (`paddle_price`/`paddle_discount`/`paddle_discount_group`/`paddle_notification_setting`) don't have identity or list support yet; `paddle_product` is a first slice, not the full set.
+The same shape works for prices — swap in `list "paddle_price" "all" { ... }`. Paddle's list-products/list-prices endpoints take no filters, so `config {}` is always empty here — every product or price in the account comes back. The other three resources (`paddle_discount`/`paddle_discount_group`/`paddle_notification_setting`) don't have identity or list support yet — deliberately deferred, since products and prices are the pair with a real bulk-import workflow gap (they always pair up, and prices are usually the most numerous catalog object per account), while the other three tend to number in the single digits per account.
 
 ### `paddle_customer` — PII in your state file
 

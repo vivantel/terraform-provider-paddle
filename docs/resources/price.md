@@ -3,12 +3,12 @@
 page_title: "paddle_price Resource - terraform-provider-paddle"
 subcategory: ""
 description: |-
-  A Paddle price defines a specific amount and billing cadence attached to a product. See Paddle API Reference https://developer.paddle.com/api-reference/prices/overview. Paddle has no hard delete for prices; terraform destroy archives the price instead (status becomes archived).
+  A Paddle price defines a specific amount and billing cadence attached to a product. See Paddle API Reference https://developer.paddle.com/api-reference/prices/overview. Paddle has no hard delete for prices; terraform destroy archives the price instead (status becomes archived). Supports resource identity and import by identity (import { identity = { id = "pri_..." } }), and a matching list block for bulk-discovering existing prices via terraform query — see the README's "List resources" section.
 ---
 
 # paddle_price (Resource)
 
-A Paddle price defines a specific amount and billing cadence attached to a product. See [Paddle API Reference](https://developer.paddle.com/api-reference/prices/overview). Paddle has no hard delete for prices; `terraform destroy` archives the price instead (status becomes `archived`).
+A Paddle price defines a specific amount and billing cadence attached to a product. See [Paddle API Reference](https://developer.paddle.com/api-reference/prices/overview). Paddle has no hard delete for prices; `terraform destroy` archives the price instead (status becomes `archived`). Supports resource identity and import by identity (`import { identity = { id = "pri_..." } }`), and a matching `list` block for bulk-discovering existing prices via `terraform query` — see the README's "List resources" section.
 
 ## Example Usage
 
