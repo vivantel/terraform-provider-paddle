@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.2] - 2026-09-10
+
+### Fixed
+
+- Bump `google.golang.org/grpc` transitive dependency from 1.83.1 to 1.83.2.
+
 ## [0.8.1] - 2026-09-09
 
 Republishes 0.8.0's content under a new version number. **`v0.8.0` is broken — do not use it.** After its initial publish, its git tag was deleted and recreated pointing at an amended commit (to drop a stray commit-message trailer); the amended commit's different timestamp produced different (still valid, just different) checksums on rebuild, but the Terraform Registry had already permanently cached the first publish's checksums against the `0.8.0` version number and never re-ingested — `terraform init` against `0.8.0` now fails with a checksum mismatch. Registries treat published versions as immutable for exactly this reason; the fix is a new version number, not further changes to the old tag. No code changes from 0.8.0's intended content.
