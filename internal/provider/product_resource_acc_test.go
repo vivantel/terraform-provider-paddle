@@ -68,6 +68,15 @@ func TestAccPaddleProductDataSource_basic(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config: providerConfig + testAccProductConfig("Acc Test Widget For Lookup", "standard", `"looked up via data source"`) + `
+resource "paddle_product" "test" {
+  name         = "Acc Test Widget For Lookup"
+  tax_category = "standard"
+  description  = "looked up via data source"
+  timeouts {
+    read = "120s"
+  }
+}
+
 data "paddle_product" "test" {
   id = paddle_product.test.id
 }
