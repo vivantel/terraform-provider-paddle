@@ -17,7 +17,7 @@ import (
 // hardcoded client.retryOverallBudget exactly, so behavior is unchanged
 // for anyone who doesn't opt in. See
 // docs/decisions/0013-configurable-timeouts-architecture.md.
-const defaultOpTimeout = 60 * time.Second
+const defaultOpTimeout = 120 * time.Second
 
 // maxResourceTimeout is the hard ceiling every resource's effective
 // timeout is clamped to, no matter what a user configures — see
