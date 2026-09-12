@@ -53,7 +53,7 @@ resource "paddle_price" "monthly" {
 - `name` (String) Customer-facing name (1–150 characters).
 - `quantity` (Attributes) Quantity bounds. Defaults to minimum 1, maximum 100 if omitted. (see [below for nested schema](#nestedatt--quantity))
 - `tax_mode` (String) Tax mode: `account_setting` (default), `external`, `internal`, or `location`.
-- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
+- `timeouts` (Attributes) Each operation defaults to 120 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
 
 ### Read-Only
 

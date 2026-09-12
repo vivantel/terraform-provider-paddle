@@ -46,7 +46,7 @@ resource "paddle_notification_setting" "orders" {
 - `active` (Boolean) Whether Paddle should try to deliver events to this destination. Defaults to `true`. Not settable at create per Paddle's API — if set to `false` here, this resource issues an immediate follow-up update right after creation to apply it.
 - `api_version` (Number) API version used for event payloads sent to this destination. Omit for the account default. Optional+Computed, not purely user-set: confirmed against the real sandbox that Paddle returns its own default (e.g., 1) even when this is omitted rather than leaving it null, so modeling this as Optional-only produced "Provider produced inconsistent result after apply" on the very first real Create — the same class of fix as `paddle_discount`'s `code`.
 - `include_sensitive_fields` (Boolean) Whether sensitive fields are included in event payloads. Defaults to `false`.
-- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
+- `timeouts` (Attributes) Each operation defaults to 120 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
 - `traffic_source` (String) Traffic source: `platform`, `simulation`, or `all`. Defaults to `platform`.
 
 ### Read-Only

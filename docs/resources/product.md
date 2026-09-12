@@ -35,7 +35,7 @@ resource "paddle_product" "example" {
 - `custom_data` (String) Arbitrary structured JSON data, e.g. `jsonencode({ internal_id = 123 })`. Compared semantically, not byte-for-byte — key ordering or whitespace differences between what you write and what Paddle echoes back won't produce a diff.
 - `description` (String) Product description (1–200 characters).
 - `image_url` (String) Publicly accessible HTTPS URL for the product image.
-- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
+- `timeouts` (Attributes) Each operation defaults to 120 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
 - `type` (String) Product type: `standard` or `custom`. Defaults to `standard`.
 
 ### Read-Only

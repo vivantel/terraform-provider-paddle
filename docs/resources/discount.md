@@ -45,7 +45,7 @@ resource "paddle_discount" "launch_promo" {
 - `mode` (String) Discount mode: `standard` or `custom`. Defaults to `standard`.
 - `recur` (Boolean) Whether the discount applies to every billing period of a recurring price, not just the first. Defaults to `false`.
 - `restrict_to` (List of String) Product or price IDs this discount is restricted to. Omit to apply to the whole catalog.
-- `timeouts` (Attributes) Each operation defaults to 60 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
+- `timeouts` (Attributes) Each operation defaults to 120 seconds and is capped at a 30-minute hard ceiling, regardless of what is configured here. (see [below for nested schema](#nestedatt--timeouts))
 - `usage_limit` (Number) Minimum 1. Omit for unlimited redemptions.
 
 ### Read-Only
