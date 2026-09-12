@@ -67,7 +67,7 @@ func TestAccPaddleProductDataSource_basic(t *testing.T) {
 		CheckDestroy:             testAccCheckProductArchived("paddle_product.test"),
 		Steps: []resource.TestStep{
 			{
-				Config: providerConfig + testAccProductConfig("Acc Test Widget For Lookup", "standard", `"looked up via data source"`) + `
+				Config: providerConfig + `
 resource "paddle_product" "test" {
   name         = "Acc Test Widget For Lookup"
   tax_category = "standard"
