@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.3] - 2026-09-12
+
+### Fixed
+
+- Increase the default operation timeout from 60 seconds to 120 seconds in `internal/provider/timeouts.go`, giving the Paddle sandbox API more headroom for transient slowness during acceptance tests and real applies. The 30-minute hard ceiling remains unchanged.
+
+### Documentation
+
+- Regenerated resource docs to reflect the new 120-second default timeout across all resources.
+
 ## [0.8.2] - 2026-09-10
 
 ### Fixed
