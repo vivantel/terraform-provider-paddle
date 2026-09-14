@@ -45,6 +45,20 @@ jobs:
             tag="${{ github.event.workflow_run.head_branch }}"
             echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           fi
+      - name: Wait for provider version on Terraform Registry
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          echo "Waiting for vivantel/paddle v$version to appear on Terraform Registry..."
+          for i in {1..30}; do
+            if curl -sf "https://registry.terraform.io/v1/providers/vivantel/paddle/versions" | jq -e ".versions[] | select(.version == \"$version\")" > /dev/null; then
+              echo "Version $version found on Registry"
+              exit 0
+            fi
+            echo "Not yet available (attempt $i/30), waiting 10s..."
+            sleep 10
+          done
+          echo "Timed out waiting for version $version on Registry"
+          exit 1
       - uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
