@@ -48,8 +48,8 @@ func TestProviderServer_ExposesAllSixActionSchemas(t *testing.T) {
 
 	// Sanity check that adding Actions() didn't disturb the existing
 	// resource/data source registration.
-	if len(resp.ResourceSchemas) != 5 {
-		t.Errorf("len(ResourceSchemas) = %d, want 5", len(resp.ResourceSchemas))
+	if len(resp.ResourceSchemas) != 6 {
+		t.Errorf("len(ResourceSchemas) = %d, want 6", len(resp.ResourceSchemas))
 	}
 	if len(resp.DataSourceSchemas) != 15 {
 		t.Errorf("len(DataSourceSchemas) = %d, want 15", len(resp.DataSourceSchemas))

@@ -133,6 +133,7 @@ func (p *PaddleProvider) Resources(_ context.Context) []func() resource.Resource
 		NewDiscountResource,
 		NewDiscountGroupResource,
 		NewNotificationSettingResource,
+		NewCheckoutSettingsResource,
 	}
 }
 

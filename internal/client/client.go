@@ -1103,6 +1103,46 @@ func (c *Client) GetCheckoutDomain(ctx context.Context, id string) (*CheckoutDom
 	return &env.Data, nil
 }
 
+// ── Checkout URL settings — https://developer.paddle.com/api-reference/settings/get-checkout-url ─
+//
+// A singleton: one account-wide setting, `default_url` (the "default
+// payment link"), read with GET and written with PATCH /settings/checkout-url.
+// Read from the API reference, 2026-11-11 — not yet confirmed against the
+// live sandbox. Sandbox accepts any https URL; live requires an approved
+// checkout domain (error code checkout_url_domain_not_approved).
+
+// CheckoutURLSettings is the response shape. DefaultURL is nil until set.
+type CheckoutURLSettings struct {
+	DefaultURL *string `json:"default_url"`
+}
+
+// CheckoutURLSettingsUpdate is the PATCH body. DefaultURL deliberately has
+// no omitempty: a nil pointer must marshal as an explicit JSON null, which
+// is how the API clears the setting.
+type CheckoutURLSettingsUpdate struct {
+	DefaultURL *string `json:"default_url"`
+}
+
+type checkoutURLSettingsEnvelope struct {
+	Data CheckoutURLSettings `json:"data"`
+}
+
+func (c *Client) GetCheckoutURLSettings(ctx context.Context) (*CheckoutURLSettings, error) {
+	var env checkoutURLSettingsEnvelope
+	if err := c.do(ctx, http.MethodGet, "/settings/checkout-url", nil, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
+func (c *Client) UpdateCheckoutURLSettings(ctx context.Context, u CheckoutURLSettingsUpdate) (*CheckoutURLSettings, error) {
+	var env checkoutURLSettingsEnvelope
+	if err := c.do(ctx, http.MethodPatch, "/settings/checkout-url", u, &env); err != nil {
+		return nil, err
+	}
+	return &env.Data, nil
+}
+
 type checkoutDomainListEnvelope struct {
 	Data []CheckoutDomain `json:"data"`
 	Meta paginationMeta   `json:"meta"`
