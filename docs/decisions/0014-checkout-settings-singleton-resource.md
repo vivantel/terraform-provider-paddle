@@ -17,4 +17,9 @@ Destroy clears rather than leaving the value because Terraform's contract is tha
 
 ## Verification status
 
-Written from the API reference (read 2026-11-11), not yet confirmed against the live sandbox. Unverified assumptions: PATCH with `null` clears the field; the GET returns `default_url: null` rather than omitting it when unset; the sandbox applies no domain check. The acceptance test records and restores the account's existing value because other acceptance tests need one set. This decision is not done until `TestAccPaddleCheckoutSettings_basic` passes in CI's `acceptance` job.
+Written from the API reference (read 2026-11-11), then confirmed against the live sandbox on 2026-11-11: `TestAccPaddleCheckoutSettings_basic` (create, update, no-op plan, import, destroy-clears-to-null) passed in CI's `acceptance` job, PR #51. The API key needs both `checkout_settings.read` and `checkout_settings.write`; with read only, the test failed with a 403 before reaching the resource. The acceptance test records the account's existing value and restores it, because other acceptance tests need a default payment link set.
+
+## Cleanup and sweepers
+
+- No sweeper: nothing is created, so nothing can be archived or deleted. A leaked state is only the sandbox pointing at a test URL, and a sweeper cannot know the original value; clearing it would break the tests that need a link set.
+- `e2e.yaml` saves the sandbox's value before apply and restores it in an `always()` step after destroy. It only exercises the resource when the latest published provider contains it, so the daily run does not fail before the first release that includes it.

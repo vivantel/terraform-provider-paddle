@@ -209,6 +209,41 @@ jobs:
         working-directory: /tmp/e2e-published
         run: terraform init
 
+      # paddle_checkout_settings is the account-wide default payment link,
+      # which paddle_adjustment (and any API-created transaction) needs set.
+      # Destroy clears it, so this block saves the value found before apply
+      # and puts it back after destroy (see the restore step at the end).
+      # Gated on the *published* provider actually containing the resource:
+      # this workflow tests the latest Registry release, which only has it
+      # once a release after docs/decisions/0014 is cut; before that the
+      # block is skipped rather than failing the daily run.
+      - name: Detect checkout settings support in the published provider
+        id: checkout
+        working-directory: /tmp/e2e-published
+        run: |
+          if terraform providers schema -json | grep -q '"paddle_checkout_settings"'; then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+            echo "Published provider has no paddle_checkout_settings yet; skipping its e2e coverage."
+          fi
+
+      - name: Save existing default payment link, append checkout settings config
+        if: ${{ steps.checkout.outputs.supported == 'true' }}
+        run: |
+          curl -sf -H "Authorization: Bearer ${PADDLE_API_KEY}" \
+            https://sandbox-api.paddle.com/settings/checkout-url \
+            | jq -c '{default_url: .data.default_url}' > /tmp/checkout-url-original.json
+          echo "Saved original checkout settings (restored after destroy)."
+          cat >> /tmp/e2e-published/main.tf <<EOF
+
+          resource "paddle_checkout_settings" "e2e" {
+            default_url = "https://example.com/e2e-published/${{ github.run_id }}"
+          }
+          EOF
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+
       - name: terraform apply
         working-directory: /tmp/e2e-published
         run: terraform apply -auto-approve
@@ -278,5 +313,23 @@ jobs:
         if: always()
         working-directory: /tmp/e2e-published
         run: terraform destroy -auto-approve
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+
+      # Runs even if apply or destroy failed, but only once the original was
+      # actually saved: destroy clears the account's default payment link,
+      # which would break every API transaction (and paddle_adjustment's
+      # acceptance test) until someone sets it again.
+      - name: Restore default payment link
+        if: ${{ always() && steps.checkout.outputs.supported == 'true' }}
+        run: |
+          if [ -s /tmp/checkout-url-original.json ]; then
+            curl -sf -X PATCH -H "Authorization: Bearer ${PADDLE_API_KEY}" \
+              -H "Content-Type: application/json" \
+              --data @/tmp/checkout-url-original.json \
+              https://sandbox-api.paddle.com/settings/checkout-url
+          else
+            echo "No saved original (save step did not run); nothing to restore."
+          fi
         env:
           PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}

@@ -81,6 +81,14 @@ resource "paddle_notification_setting" "billing_events" {
   ]
 }
 
+# The account's default payment link — a singleton, one per Paddle
+# account. Paddle refuses to create any transaction through the API until
+# this is set, and opens it (with ?_ptxn=<transaction id> appended) for
+# checkouts that carry no URL of their own. The page must run Paddle.js.
+resource "paddle_checkout_settings" "default" {
+  default_url = "https://example.com/buy"
+}
+
 # Look up something that already exists outside this config (e.g.
 # approved via the Paddle dashboard, not created here) rather than
 # managing it — paddle_checkout_domain has no matching resource at all,
